@@ -15,24 +15,30 @@
             overflow: hidden;
             font-family: 'Courier New', monospace;
         }
-        #gameContainer { position: relative; width: 800px; height: 400px; }
-        canvas { display: block; position: absolute; top: 0; left: 0; }
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            aspect-ratio: 2/1;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+        }
         #uiCanvas { z-index: 10; pointer-events: none; }
 
         #debugPanel {
             position: fixed;
-            bottom: 8px;
-            left: 8px;
+            bottom: 8px; left: 8px;
             background: rgba(0,0,0,0.88);
-            color: #0f0;
-            font-size: 10px;
-            padding: 6px 8px;
-            border-radius: 4px;
+            color: #0f0; font-size: 10px;
+            padding: 6px 8px; border-radius: 4px;
             z-index: 9999;
-            max-width: 95vw;
-            max-height: 130px;
-            overflow-y: auto;
-            pointer-events: auto;
+            max-width: 95vw; max-height: 130px;
+            overflow-y: auto; pointer-events: auto;
             line-height: 1.4;
         }
     </style>
@@ -64,21 +70,31 @@
         return false;
     };
 
-    // ==================== 画布 ====================
+    // ==================== 画布（自适应） ====================
     var gameCanvas = document.getElementById('gameCanvas');
     var uiCanvas = document.getElementById('uiCanvas');
     var ctx = gameCanvas.getContext('2d');
     var uiCtx = uiCanvas.getContext('2d');
 
-    var WIDTH = 800;
-    var HEIGHT = 400;
+    var WIDTH = Math.min(800, window.innerWidth - 20);
+    var HEIGHT = WIDTH * 0.5;
     gameCanvas.width = WIDTH;
     gameCanvas.height = HEIGHT;
     uiCanvas.width = WIDTH;
     uiCanvas.height = HEIGHT;
 
     var GROUND_Y = HEIGHT - 60;
-    debug('画布初始化完成 ' + WIDTH + 'x' + HEIGHT);
+    debug('画布: ' + WIDTH + 'x' + HEIGHT);
+
+    window.addEventListener('resize', function() {
+        WIDTH = Math.min(800, window.innerWidth - 20);
+        HEIGHT = WIDTH * 0.5;
+        gameCanvas.width = WIDTH;
+        gameCanvas.height = HEIGHT;
+        uiCanvas.width = WIDTH;
+        uiCanvas.height = HEIGHT;
+        GROUND_Y = HEIGHT - 60;
+    });
 
     // ==================== 图片加载 ====================
     var imageList = [
@@ -118,10 +134,9 @@
             };
         })(item.name, item.ext);
 
-        // 关键：路径以 /assets/ 开头
         img.src = '/assets/' + item.name + '.' + item.ext;
     }
-    debug('开始加载 ' + totalImages + ' 张图片');
+    debug('加载 ' + totalImages + ' 张图片');
 
     // ==================== 坦克属性 ====================
     var TANK_W = 64;
@@ -209,6 +224,26 @@
         }
     });
 
+    // 点击/触摸跳跃（兼容移动端）
+    document.addEventListener('click', function(e) {
+        if (!gameStarted && !gameOver) { gameStarted = true; return; }
+        if (gameOver) { restartGame(); return; }
+        if (!tank.jumping && !tank.crouching) {
+            tank.vy = JUMP_FORCE;
+            tank.jumping = true;
+        }
+    });
+
+    document.addEventListener('touchstart', function(e) {
+        if (!gameStarted && !gameOver) { gameStarted = true; return; }
+        if (gameOver) { restartGame(); return; }
+        if (!tank.jumping && !tank.crouching) {
+            tank.vy = JUMP_FORCE;
+            tank.jumping = true;
+        }
+        e.preventDefault();
+    });
+
     // ==================== 技能 ====================
     function activateSkill() {
         if (tank.skillActive) return;
@@ -228,15 +263,11 @@
         );
     }
 
-    // ==================== 获取坦克贴图 ====================
+    // ==================== 坦克贴图 ====================
     function getTankImage() {
         var c = tank.crouching;
-        if (tank.skillActive) {
-            return images[c ? 'tank_crouch_active' : 'tank_normal_active'];
-        }
-        if (tank.skillCooldownTimer > 0) {
-            return images[c ? 'tank_crouch_cd' : 'tank_normal_cd'];
-        }
+        if (tank.skillActive) return images[c ? 'tank_crouch_active' : 'tank_normal_active'];
+        if (tank.skillCooldownTimer > 0) return images[c ? 'tank_crouch_cd' : 'tank_normal_cd'];
         return images[c ? 'tank_crouch_ready' : 'tank_normal_ready'];
     }
 
@@ -251,12 +282,10 @@
         frameCount++;
         score++;
 
-        // 难度递增
         gameSpeed = 5 + Math.floor(score / 500);
         obstacleInterval = Math.max(45, 100 - Math.floor(score / 300));
         pickupInterval = Math.max(100, 240 - Math.floor(score / 400));
 
-        // 重力 & 跳跃
         tank.vy += GRAVITY;
         tank.y += tank.vy;
 
@@ -267,25 +296,17 @@
             tank.jumping = false;
         }
 
-        // 技能倒计时
         if (tank.skillActive) {
             tank.skillTimer--;
             if (tank.skillTimer <= 0) {
                 tank.skillActive = false;
                 tank.skillCooldownTimer = tank.skillCooldown;
-                debug('⏳ 主动防御结束，开始冷却');
+                debug('⏳ 主动防御结束，冷却中');
             }
         }
-        if (tank.skillCooldownTimer > 0) {
-            tank.skillCooldownTimer--;
-        }
+        if (tank.skillCooldownTimer > 0) tank.skillCooldownTimer--;
+        if (tank.invincibleTimer > 0) tank.invincibleTimer--;
 
-        // 无敌倒计时
-        if (tank.invincibleTimer > 0) {
-            tank.invincibleTimer--;
-        }
-
-        // 生成障碍
         obstacleTimer++;
         if (obstacleTimer >= obstacleInterval) {
             obstacleTimer = 0;
@@ -299,7 +320,6 @@
             });
         }
 
-        // 生成道具
         pickupTimer++;
         if (pickupTimer >= pickupInterval) {
             pickupTimer = 0;
@@ -313,19 +333,12 @@
             }
         }
 
-        // 移动障碍
-        for (var i = 0; i < obstacles.length; i++) {
-            obstacles[i].x -= gameSpeed;
-        }
+        for (var i = 0; i < obstacles.length; i++) obstacles[i].x -= gameSpeed;
         obstacles = obstacles.filter(function(o) { return o.x > -60; });
 
-        // 移动道具
-        for (var i = 0; i < pickups.length; i++) {
-            pickups[i].x -= gameSpeed;
-        }
+        for (var i = 0; i < pickups.length; i++) pickups[i].x -= gameSpeed;
         pickups = pickups.filter(function(p) { return p.x > -40; });
 
-        // 碰撞检测：障碍
         var tr = {
             x: tank.x,
             y: tank.y,
@@ -337,12 +350,10 @@
             if (rectCollide(tr, obstacles[i])) {
                 if (tank.skillActive) continue;
                 if (tank.invincibleTimer > 0) continue;
-
                 tank.hp -= 25;
                 tank.invincibleTimer = tank.invincibleDuration;
                 obstacles[i].x = -999;
-                debug('💥 受到伤害！HP: ' + tank.hp, true);
-
+                debug('💥 受伤！HP: ' + tank.hp, true);
                 if (tank.hp <= 0) {
                     tank.hp = 0;
                     gameOver = true;
@@ -351,7 +362,6 @@
             }
         }
 
-        // 碰撞检测：道具
         for (var i = 0; i < pickups.length; i++) {
             if (rectCollide(tr, pickups[i])) {
                 if (tank.hp < tank.maxHp) {
@@ -362,14 +372,12 @@
             }
         }
 
-        // 清理
         obstacles = obstacles.filter(function(o) { return o.x !== -999; });
         pickups = pickups.filter(function(p) { return p.x !== -999; });
     }
 
     // ==================== 绘制 ====================
     function drawBackground() {
-        // 背景图
         var bg = images['bg'];
         if (bg && bg.complete && bg.naturalWidth > 0) {
             ctx.drawImage(bg, 0, 0, WIDTH, HEIGHT);
@@ -378,7 +386,6 @@
             ctx.fillRect(0, 0, WIDTH, GROUND_Y);
         }
 
-        // 地面图
         var ground = images['ground'];
         if (ground && ground.complete && ground.naturalWidth > 0) {
             ctx.drawImage(ground, 0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
@@ -431,30 +438,23 @@
     function drawUI() {
         uiCtx.clearRect(0, 0, WIDTH, HEIGHT);
 
-        // HP 条
         var barX = 20, barY = 20, barW = 200, barH = 18;
         uiCtx.fillStyle = '#333';
         uiCtx.fillRect(barX, barY, barW, barH);
-
         var hpRatio = tank.hp / tank.maxHp;
-        var hpColor = hpRatio > 0.5 ? '#4CAF50' : (hpRatio > 0.25 ? '#FF9800' : '#F44336');
-        uiCtx.fillStyle = hpColor;
+        uiCtx.fillStyle = hpRatio > 0.5 ? '#4CAF50' : (hpRatio > 0.25 ? '#FF9800' : '#F44336');
         uiCtx.fillRect(barX, barY, barW * hpRatio, barH);
-
         uiCtx.strokeStyle = '#fff';
         uiCtx.lineWidth = 2;
         uiCtx.strokeRect(barX, barY, barW, barH);
-
         uiCtx.fillStyle = '#fff';
         uiCtx.font = 'bold 13px "Courier New"';
         uiCtx.textAlign = 'center';
         uiCtx.fillText('HP: ' + tank.hp + '/' + tank.maxHp, barX + barW / 2, barY + 14);
 
-        // 技能条
         var sx = 20, sy = 48, sw = 200, sh = 10;
         uiCtx.fillStyle = '#222';
         uiCtx.fillRect(sx, sy, sw, sh);
-
         if (tank.skillActive) {
             uiCtx.fillStyle = '#FFD700';
             uiCtx.fillRect(sx, sy, sw * (tank.skillTimer / tank.skillDuration), sh);
@@ -475,13 +475,11 @@
             uiCtx.fillText('主防就绪 [Shift]', sx + sw / 2, sy - 4);
         }
 
-        // 分数
         uiCtx.fillStyle = '#333';
         uiCtx.font = 'bold 22px "Courier New"';
         uiCtx.textAlign = 'right';
         uiCtx.fillText('' + Math.floor(score / 10), WIDTH - 20, 35);
 
-        // 结束/开始提示
         if (gameOver) {
             uiCtx.fillStyle = 'rgba(0,0,0,0.7)';
             uiCtx.fillRect(0, HEIGHT / 2 - 50, WIDTH, 100);
@@ -490,28 +488,26 @@
             uiCtx.textAlign = 'center';
             uiCtx.fillText('坦克损毁', WIDTH / 2, HEIGHT / 2 - 10);
             uiCtx.font = '16px "Courier New"';
-            uiCtx.fillText('按空格键重新出发', WIDTH / 2, HEIGHT / 2 + 30);
+            uiCtx.fillText('按空格或点击屏幕重新出发', WIDTH / 2, HEIGHT / 2 + 30);
         } else if (!gameStarted) {
             uiCtx.fillStyle = '#fff';
             uiCtx.font = 'bold 20px "Courier New"';
             uiCtx.textAlign = 'center';
-            uiCtx.fillText('按空格键开始', WIDTH / 2, HEIGHT / 2);
+            uiCtx.fillText('按空格或点击屏幕开始', WIDTH / 2, HEIGHT / 2);
             uiCtx.font = '13px "Courier New"';
-            uiCtx.fillText('跳跃: 空格/↑/W | 下蹲: ↓/S | 主防: Shift', WIDTH / 2, HEIGHT / 2 + 28);
+            uiCtx.fillText('跳跃: 空格/↑/W/点击 | 下蹲: ↓/S | 主防: Shift', WIDTH / 2, HEIGHT / 2 + 28);
         }
     }
 
     // ==================== 主循环 ====================
     function gameLoop() {
         update();
-
         ctx.clearRect(0, 0, WIDTH, HEIGHT);
         drawBackground();
         drawPickups();
         drawObstacles();
         drawTank();
         drawUI();
-
         requestAnimationFrame(gameLoop);
     }
 
@@ -526,7 +522,6 @@
         tank.skillTimer = 0;
         tank.skillCooldownTimer = 0;
         tank.invincibleTimer = 0;
-
         obstacles = [];
         pickups = [];
         obstacleTimer = 0;
@@ -536,14 +531,12 @@
         gameSpeed = 5;
         gameOver = false;
         gameStarted = false;
-
         debug('🔄 重新开始');
     }
 
-    // ==================== 等待图片加载完毕 ====================
     function startWhenReady() {
         if (loaded >= totalImages) {
-            debug('🎮 全部素材加载完毕，启动游戏循环');
+            debug('🎮 素材加载完毕，启动！');
             gameLoop();
         } else {
             debug('⏳ 加载中... (' + loaded + '/' + totalImages + ')');
