@@ -1,1 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>轻坦快跑</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+        }
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 400px;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0; left: 0;
+        }
+        #uiCanvas {
+            z-index: 10;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+<div id="gameContainer">
+    <canvas id="gameCanvas"></canvas>
+    <canvas id="uiCanvas"></canvas>
+</div>
 
+<script>
+// ==================== 获取画布 ====================
+const gameCanvas = document.getElementById('gameCanvas');
+const uiCanvas = document.getElementById('uiCanvas');
+const ctx = gameCanvas.getContext('2d');
+const uiCtx = uiCanvas.getContext('2d');
+
+const WIDTH = 800;
+const HEIGHT = 400;
+gameCanvas.width = uiCanvas.width = WIDTH;
+gameCanvas.height = uiCanvas.height = HEIGHT;
+
+const GROUND_Y = HEIGHT - 60;
+
+// ==================== 加载素材 ====================
+const imageNames = [
+    'tank_normal_ready', 'tank_normal_active', 'tank_normal_cd',
+    'tank_crouch_ready', 'tank_crouch_active', 'tank_crouch_cd',
+    'obstacle_ground', 'obstacle_air',
+    'weld_torch',
+    'bg', 'ground'
+];
+
+const images = {};
+let loaded = 0;
+imageNames.forEach(name => {
+    images[name] = new Image();
+    images[name].onload = () => loaded++;
+    images[name].src = `assets/${name}.png`;
+});
+
+// ==================== 坦克属性 ====================
+const TANK_W = 64;
+const TANK_H = 44;
+const TANK_CROUCH_H = 24;
+
+const tank = {
+    x: 100,
+    y: GROUND_Y - TANK_H,
+    w: TANK_W,
+    h: TANK_H,
+    vy: 0,
+    jumping: false,
+    crouching: false,
+
+    // HP
+    hp: 100,
+    maxHp: 100,
+
+    // 技能
+    skillActive: false,
+    skillTimer: 0,
+    skillDuration: 10 * 60,
+    skillCooldown: 30 * 60,
+    skillCooldownTimer: 0,
+
+    // 受伤后无敌
+    invincibleTimer: 0,
+    invincibleDuration: 25,
+};
+
+const GRAVITY = 0.8;
+const JUMP_FORCE = -13;
+
+// ==================== 障碍物 ====================
+const OBS_G_W = 30;
+const OBS_G_H = 40;
+const OBS_A_W = 50;
+const OBS_A_H = 28;
+let obstacles = [];
+let obstacleTimer = 0;
+let obstacleInterval = 100;
+
+// ==================== 道具（焊枪） ====================
+const PICKUP_W = 30;
+const PICKUP_H = 30;
+let pickups = [];
+let pickupTimer = 0;
+let pickupInterval = 240;  // 大约每4秒可能出现一个
+
+// ==================== 游戏状态 ====================
+let frameCount = 0;
+let score = 0;
+let gameSpeed = 5;
+let gameOver = false;
+let gameStarted = false;
+
+// ==================== 键盘 ====================
+const keys = {};
+document.addEventListener('keydown', e => {
+    keys[e.code] = true;
+
+    if (!gameStarted && !gameOver) gameStarted = true;
+    if (gameOver && e.code === 'Space') { restartGame(); return; }
+
+    if ((e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') && !tank.jumping && !tank.crouching) {
+        tank.vy = JUMP_FORCE;
+        tank.jumping = true;
+    }
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        tank.crouching = true;
+    }
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+        activateSkill();
+    }
+    e.preventDefault();
+});
+
+document.addEventListener('keyup', e => {
+    keys[e.code] = false;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') tank.crouching = false;
+});
+
+// ==================== 技能 ====================
+function activateSkill() {
+    if (tank.skillActive) return;
+    if (tank.skillCooldownTimer > 0) return;
+    tank.skillActive = true;
+    tank.skillTimer = tank.skillDuration;
+}
+
+// ==================== 碰撞检测 ====================
+function rectCollide(a, b) {
+    return (
+        a.x < b.x + b.w &&
+        a.x + a.w > b.x &&
+        a.y < b.y + b.h &&
+        a.y + a.h > b.y
+    );
+}
+
+// ==================== 获取当前坦克图片 ====================
+function getTankImage() {
+    const crouch = tank.crouching;
+    if (tank.skillActive) return images[crouch ? 'tank_crouch_active' : 'tank_normal_active'];
+    if (tank.skillCooldownTimer > 0) return images[crouch ? 'tank_crouch_cd' : 'tank_normal_cd'];
+    return images[crouch ? 'tank_crouch_ready' : 'tank_normal_ready'];
+}
+
+function getTankHeight() {
+    return tank.crouching ? TANK_CROUCH_H : TANK_H;
+}
+
+// ==================== 更新 ====================
+function update() {
+    if (!gameStarted || gameOver) return;
+
+    frameCount++;
+    score++;
+    gameSpeed = 5 + Math.floor(score / 500);
+    obstacleInterval = Math.max(50, 100 - Math.floor(score / 300));
+    pickupInterval = Math.max(120, 240 - Math.floor(score / 400));
+
+    // === 坦克物理 ===
+    tank.vy += GRAVITY;
+    tank.y += tank.vy;
+
+    const currentH = getTankHeight();
+    if (tank.y >= GROUND_Y - currentH) {
+        tank.y = GROUND_Y - currentH;
+        tank.vy = 0;
+        tank.jumping = false;
+    }
+
+    // === 技能 ===
+    if (tank.skillActive) {
+        tank.skillTimer--;
+        if (tank.skillTimer <= 0) {
+            tank.skillActive = false;
+            tank.skillCooldownTimer = tank.skillCooldown;
+        }
+    }
+    if (tank.skillCooldownTimer > 0) tank.skillCooldownTimer--;
+
+    // === 无敌 ===
+    if (tank.invincibleTimer > 0) tank.invincibleTimer--;
+
+    // === 生成障碍 ===
+    obstacleTimer++;
+    if (obstacleTimer >= obstacleInterval) {
+        obstacleTimer = 0;
+        const isAir = Math.random() < 0.45;
+        obstacles.push({
+            x: WIDTH,
+            y: isAir ? GROUND_Y - OBSTACLE_A_H - 30 : GROUND_Y - OBSTACLE_G_H,
+            w: isAir ? OBSTACLE_A_W : OBSTACLE_G_W,
+            h: isAir ? OBSTACLE_A_H : OBSTACLE_G_H,
+            type: isAir ? 'air' : 'ground',
+        });
+    }
+
+    // === 生成焊枪道具 ===
+    pickupTimer++;
+    if (pickupTimer >= pickupInterval) {
+        pickupTimer = 0;
+        const rand = Math.random();
+        if (rand < 0.6) { // 60%概率生成
+            pickups.push({
+                x: WIDTH,
+                y: GROUND_Y - PICKUP_H - 5,
+                w: PICKUP_W,
+                h: PICKUP_H,
+            });
+        }
+    }
+
+    // === 移动障碍 ===
+    for (let obs of obstacles) obs.x -= gameSpeed;
+    obstacles = obstacles.filter(o => o.x > -60);
+
+    // === 移动道具 ===
+    for (let p of pickups) p.x -= gameSpeed;
+    pickups = pickups.filter(p => p.x > -40);
+
+    // === 碰撞检测（障碍） ===
+    const tankRect = {
+        x: tank.x,
+        y: tank.y,
+        w: TANK_W,
+        h: getTankHeight(),
+    };
+
+    for (let obs of obstacles) {
+        if (rectCollide(tankRect, obs)) {
+            if (tank.skillActive) continue;        // 技能免伤
+            if (tank.invincibleTimer > 0) continue; // 短暂无敌
+            tank.hp -= 25;
+            tank.invincibleTimer = tank.invincibleDuration;
+            // 移除这个障碍，避免重复判定
+            obs.x = -999;
+            if (tank.hp <= 0) {
+                tank.hp = 0;
+                gameOver = true;
+            }
+        }
+    }
+
+    // === 碰撞检测（道具） ===
+    for (let p of pickups) {
+        if (rectCollide(tankRect, p)) {
+            if (tank.hp < tank.maxHp) {
+                tank.hp = Math.min(tank.maxHp, tank.hp + 25);
+            }
+            p.x = -999; // 吃掉后移除
+        }
+    }
+
+    // 清理掉被标记为 -999 的障碍和道具
+    obstacles = obstacles.filter(o => o.x !== -999);
+    pickups = pickups.filter(p => p.x !== -999);
+}
+
+// ==================== 绘制 ====================
+function drawBackground() {
+    if (images['bg'] && images['bg'].complete && images['bg'].naturalWidth > 0) {
+        ctx.drawImage(images['bg'], 0, 0, WIDTH, HEIGHT);
+    } else {
+        ctx.fillStyle = '#87CEEB';
+        ctx.fillRect(0, 0, WIDTH, GROUND_Y);
+    }
+
+    if (images['ground'] && images['ground'].complete && images['ground'].naturalWidth > 0) {
+        ctx.drawImage(images['ground'], 0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
+    } else {
+        ctx.fillStyle = '#8B7355';
+        ctx.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
+        ctx.strokeStyle = '#333';
+        ctx.beginPath();
+        ctx.moveTo(0, GROUND_Y);
+        ctx.lineTo(WIDTH, GROUND_Y);
+        ctx.stroke();
+    }
+}
+
+function drawTank() {
+    const img = getTankImage();
+    const h = getTankHeight();
+    const y = GROUND_Y - h;
+    tank.y = y;
+    tank.h = h;
+
+    if (img && img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, tank.x, tank.y, TANK_W, h);
+    } else {
+        // 占位色块
+        ctx.fillStyle = tank.skillActive ? '#FFD700' : (tank.skillCooldownTimer > 0 ? '#888' : '#4CAF50');
+        ctx.fillRect(tank.x, tank.y, TANK_W, h);
+    }
+}
+
+function drawObstacles() {
+    for (let obs of obstacles) {
+        const img = images[obs.type === 'air' ? 'obstacle_air' : 'obstacle_ground'];
+        if (img && img.complete && img.naturalWidth > 0) {
+            ctx.drawImage(img, obs.x, obs.y, obs.w, obs.h);
+        } else {
+            ctx.fillStyle = obs.type === 'air' ? '#FF4444' : '#333';
+            ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+        }
+    }
+}
+
+function drawPickups() {
+    const img = images['weld_torch'];
+    for (let p of pickups) {
+        if (img && img.complete && img.naturalWidth > 0) {
+            ctx.drawImage(img, p.x, p.y, p.w, p.h);
+        } else {
+            // 占位：黄色闪电符号
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(p.x, p.y, p.w, p.h);
+        }
+    }
+}
+
+function drawUI() {
+    uiCtx.clearRect(0, 0, WIDTH, HEIGHT);
+
+    // HP条
+    const barX = 20, barY = 20, barW = 200, barH = 18;
+    uiCtx.fillStyle = '#333';
+    uiCtx.fillRect(barX, barY, barW, barH);
+    const hpRatio = tank.hp / tank.maxHp;
+    const hpColor = hpRatio > 0.5 ? '#4CAF50' : hpRatio > 0.25 ? '#FF9800' : '#F44336';
+    uiCtx.fillStyle = hpColor;
+    uiCtx.fillRect(barX, barY, barW * hpRatio, barH);
+    uiCtx.strokeStyle = '#fff';
+    uiCtx.lineWidth = 2;
+    uiCtx.strokeRect(barX, barY, barW, barH);
+    uiCtx.fillStyle = '#fff';
+    uiCtx.font = 'bold 13px "Courier New"';
+    uiCtx.textAlign = 'center';
+    uiCtx.fillText(`HP: ${tank.hp}/${tank.maxHp}`, barX + barW / 2, barY + 14);
+
+    // 技能状态
+    const skillX = 20, skillY = 48, skillW = 200, skillH = 10;
+    uiCtx.fillStyle = '#222';
+    uiCtx.fillRect(skillX, skillY, skillW, skillH);
+    if (tank.skillActive) {
+        const ratio = tank.skillTimer / tank.skillDuration;
+        uiCtx.fillStyle = '#FFD700';
+        uiCtx.fillRect(skillX, skillY, skillW * ratio, skillH);
+        uiCtx.fillStyle = '#fff';
+        uiCtx.font = '10px "Courier New"';
+        uiCtx.fillText('主防开启', skillX + skillW / 2, skillY - 4);
+    } else if (tank.skillCooldownTimer > 0) {
+        const ratio = tank.skillCooldownTimer / tank.skillCooldown;
+        uiCtx.fillStyle = '#666';
+        uiCtx.fillRect(skillX, skillY, skillW * ratio, skillH);
+        uiCtx.fillStyle = '#aaa';
+        uiCtx.font = '10px "Courier New"';
+        const cdSec = Math.ceil(tank.skillCooldownTimer / 60);
+        uiCtx.fillText(`主防CD: ${cdSec}s`, skillX + skillW / 2, skillY - 4);
+    } else {
+        uiCtx.fillStyle = '#4CAF50';
+        uiCtx.fillRect(skillX, skillY, skillW, skillH);
+        uiCtx.fillStyle = '#fff';
+        uiCtx.font = '10px "Courier New"';
+        uiCtx.fillText('主防就绪 [Shift]', skillX + skillW / 2, skillY - 4);
+    }
+
+    // 分数
+    uiCtx.fillStyle = '#333';
+    uiCtx.font = 'bold 22px "Courier New"';
+    uiCtx.textAlign = 'right';
+    uiCtx.fillText(`${Math.floor(score/10)}`, WIDTH - 20, 35);
+
+    // 游戏结束/开始提示
+    if (gameOver) {
+        uiCtx.fillStyle = 'rgba(0,0,0,0.7)';
+        uiCtx.fillRect(0, HEIGHT/2 - 50, WIDTH, 100);
+        uiCtx.fillStyle = '#fff';
+        uiCtx.font = 'bold 30px "Courier New"';
+        uiCtx.textAlign = 'center';
+        uiCtx.fillText('💥 坦克损毁 💥', WIDTH/2, HEIGHT/2 - 10);
+        uiCtx.font = '16px "Courier New"';
+        uiCtx.fillText('按空格键重新出发', WIDTH/2, HEIGHT/2 + 30);
+    } else if (!gameStarted) {
+        uiCtx.fillStyle = '#fff';
+        uiCtx.font = 'bold 20px "Courier New"';
+        uiCtx.textAlign = 'center';
+        uiCtx.fillText('按空格键开始', WIDTH/2, HEIGHT/2);
+        uiCtx.font = '13px "Courier New"';
+        uiCtx.fillText('↑/W/空格 跳跃 | ↓/S 下蹲 | Shift 主动防御', WIDTH/2, HEIGHT/2 + 28);
+    }
+}
+
+// ==================== 主循环 ====================
+function gameLoop() {
+    update();
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+    drawBackground();
+    drawPickups();   // 道具画在坦克下面
+    drawObstacles();
+    drawTank();
+    drawUI();
+    requestAnimationFrame(gameLoop);
+}
+
+// ==================== 重新开始 ====================
+function restartGame() {
+    tank.y = GROUND_Y - TANK_H;
+    tank.h = TANK_H;
+    tank.vy = 0;
+    tank.jumping = false;
+    tank.crouching = false;
+    tank.hp = tank.maxHp;
+    tank.skillActive = false;
+    tank.skillTimer = 0;
+    tank.skillCooldownTimer = 0;
+    tank.invincibleTimer = 0;
+    obstacles = [];
+    pickups = [];
+    obstacleTimer = 0;
+    pickupTimer = 0;
+    frameCount = 0;
+    score = 0;
+    gameSpeed = 5;
+    gameOver = false;
+    gameStarted = false;
+}
+
+// ==================== 启动 ====================
+function startWhenReady() {
+    if (loaded >= imageNames.length) {
+        console.log('✅ 全部素材加载完毕，游戏启动！');
+        gameLoop();
+    } else {
+        console.log(`⏳ 素材加载中... (${loaded}/${imageNames.length})`);
+        setTimeout(startWhenReady, 200);
+    }
+}
+startWhenReady();
+</script>
+</body>
+</html>
