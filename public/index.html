@@ -14,6 +14,7 @@
             min-height: 100vh;
             overflow: hidden;
             font-family: 'Courier New', monospace;
+            touch-action: manipulation;
         }
         #gameContainer {
             position: relative;
@@ -30,6 +31,7 @@
         }
         #uiCanvas { z-index: 10; pointer-events: none; }
 
+        /* 调试面板 */
         #debugPanel {
             position: fixed;
             bottom: 8px; left: 8px;
@@ -41,6 +43,29 @@
             overflow-y: auto; pointer-events: auto;
             line-height: 1.4;
         }
+
+        /* 移动端跳跃按钮 */
+        #jumpBtn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            border: 3px solid rgba(255,255,255,0.6);
+            color: #fff;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 9998;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
     </style>
 </head>
 <body>
@@ -50,6 +75,7 @@
     <canvas id="uiCanvas"></canvas>
 </div>
 <div id="debugPanel">⏳ 启动中...</div>
+<button id="jumpBtn">跳</button>
 
 <script>
 (function() {
@@ -63,6 +89,7 @@
         debugLines.push((isError ? '❌ ' : '✅ ') + msg);
         if (debugLines.length > 18) debugLines.shift();
         debugEl.innerHTML = debugLines.join('<br>');
+        console.log((isError ? 'ERROR: ' : 'OK: ') + msg);
     }
 
     window.onerror = function(msg, source, line) {
@@ -70,31 +97,21 @@
         return false;
     };
 
-    // ==================== 画布（自适应） ====================
+    // ==================== 画布 ====================
     var gameCanvas = document.getElementById('gameCanvas');
     var uiCanvas = document.getElementById('uiCanvas');
     var ctx = gameCanvas.getContext('2d');
     var uiCtx = uiCanvas.getContext('2d');
 
-    var WIDTH = Math.min(800, window.innerWidth - 20);
-    var HEIGHT = WIDTH * 0.5;
+    var WIDTH = 800;
+    var HEIGHT = 400;
     gameCanvas.width = WIDTH;
     gameCanvas.height = HEIGHT;
     uiCanvas.width = WIDTH;
     uiCanvas.height = HEIGHT;
 
     var GROUND_Y = HEIGHT - 60;
-    debug('画布: ' + WIDTH + 'x' + HEIGHT);
-
-    window.addEventListener('resize', function() {
-        WIDTH = Math.min(800, window.innerWidth - 20);
-        HEIGHT = WIDTH * 0.5;
-        gameCanvas.width = WIDTH;
-        gameCanvas.height = HEIGHT;
-        uiCanvas.width = WIDTH;
-        uiCanvas.height = HEIGHT;
-        GROUND_Y = HEIGHT - 60;
-    });
+    debug('画布: ' + WIDTH + 'x' + HEIGHT + ', 地面Y: ' + GROUND_Y);
 
     // ==================== 图片加载 ====================
     var imageList = [
@@ -162,8 +179,8 @@
         invincibleDuration: 25
     };
 
-    var GRAVITY = 0.8;
-    var JUMP_FORCE = -13;
+    var GRAVITY = 1.0;
+    var JUMP_FORCE = -15;
 
     // ==================== 障碍物 & 道具 ====================
     var OBS_G_W = 30, OBS_G_H = 40;
@@ -184,64 +201,77 @@
     var gameOver = false;
     var gameStarted = false;
 
+    // ==================== 跳跃函数（核心） ====================
+    function doJump() {
+        debug('跳跃触发！jumping=' + tank.jumping + ' crouching=' + tank.crouching + ' y=' + Math.floor(tank.y) + ' GROUND=' + GROUND_Y);
+
+        if (tank.jumping) {
+            debug('已经在空中，不能跳', true);
+            return;
+        }
+        if (tank.crouching) {
+            debug('正在下蹲，不能跳', true);
+            return;
+        }
+
+        tank.vy = JUMP_FORCE;
+        tank.jumping = true;
+        debug('🚀 跳跃！vy=' + tank.vy);
+    }
+
     // ==================== 键盘控制 ====================
-    var keys = {};
-
     document.addEventListener('keydown', function(e) {
-        keys[e.code] = true;
-
         if (!gameStarted && !gameOver) {
             gameStarted = true;
             debug('游戏开始！');
         }
 
-        if (gameOver && e.code === 'Space') {
-            restartGame();
+        if (gameOver) {
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                restartGame();
+            }
             return;
         }
 
-        if ((e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') &&
-            !tank.jumping && !tank.crouching) {
-            tank.vy = JUMP_FORCE;
-            tank.jumping = true;
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+            e.preventDefault();
+            doJump();
         }
 
         if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+            e.preventDefault();
             tank.crouching = true;
+            debug('下蹲');
         }
 
         if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+            e.preventDefault();
             activateSkill();
         }
-
-        e.preventDefault();
     });
 
     document.addEventListener('keyup', function(e) {
-        keys[e.code] = false;
         if (e.code === 'ArrowDown' || e.code === 'KeyS') {
             tank.crouching = false;
         }
     });
 
-    // 点击/触摸跳跃（兼容移动端）
+    // ==================== 屏幕点击跳跃 ====================
     document.addEventListener('click', function(e) {
-        if (!gameStarted && !gameOver) { gameStarted = true; return; }
+        if (e.target.id === 'jumpBtn') return; // 按钮单独处理
+        if (!gameStarted && !gameOver) { gameStarted = true; debug('点击开始！'); return; }
         if (gameOver) { restartGame(); return; }
-        if (!tank.jumping && !tank.crouching) {
-            tank.vy = JUMP_FORCE;
-            tank.jumping = true;
-        }
+        doJump();
     });
 
-    document.addEventListener('touchstart', function(e) {
-        if (!gameStarted && !gameOver) { gameStarted = true; return; }
-        if (gameOver) { restartGame(); return; }
-        if (!tank.jumping && !tank.crouching) {
-            tank.vy = JUMP_FORCE;
-            tank.jumping = true;
-        }
+    // ==================== 跳跃按钮 ====================
+    var jumpBtn = document.getElementById('jumpBtn');
+    jumpBtn.addEventListener('pointerdown', function(e) {
         e.preventDefault();
+        e.stopPropagation();
+        if (!gameStarted && !gameOver) { gameStarted = true; debug('按钮开始！'); return; }
+        if (gameOver) { restartGame(); return; }
+        doJump();
     });
 
     // ==================== 技能 ====================
@@ -263,7 +293,6 @@
         );
     }
 
-    // ==================== 坦克贴图 ====================
     function getTankImage() {
         var c = tank.crouching;
         if (tank.skillActive) return images[c ? 'tank_crouch_active' : 'tank_normal_active'];
@@ -286,27 +315,34 @@
         obstacleInterval = Math.max(45, 100 - Math.floor(score / 300));
         pickupInterval = Math.max(100, 240 - Math.floor(score / 400));
 
+        // 重力
         tank.vy += GRAVITY;
         tank.y += tank.vy;
 
+        // 落地检测
         var h = getTankHeight();
-        if (tank.y >= GROUND_Y - h) {
-            tank.y = GROUND_Y - h;
+        var floorY = GROUND_Y - h;
+        if (tank.y >= floorY) {
+            if (tank.jumping) {
+                debug('落地 y=' + Math.floor(tank.y) + ' floor=' + floorY);
+            }
+            tank.y = floorY;
             tank.vy = 0;
             tank.jumping = false;
         }
 
+        // 技能倒计时
         if (tank.skillActive) {
             tank.skillTimer--;
             if (tank.skillTimer <= 0) {
                 tank.skillActive = false;
                 tank.skillCooldownTimer = tank.skillCooldown;
-                debug('⏳ 主动防御结束，冷却中');
             }
         }
         if (tank.skillCooldownTimer > 0) tank.skillCooldownTimer--;
         if (tank.invincibleTimer > 0) tank.invincibleTimer--;
 
+        // 生成障碍
         obstacleTimer++;
         if (obstacleTimer >= obstacleInterval) {
             obstacleTimer = 0;
@@ -320,6 +356,7 @@
             });
         }
 
+        // 生成道具
         pickupTimer++;
         if (pickupTimer >= pickupInterval) {
             pickupTimer = 0;
@@ -333,12 +370,15 @@
             }
         }
 
+        // 移动障碍
         for (var i = 0; i < obstacles.length; i++) obstacles[i].x -= gameSpeed;
         obstacles = obstacles.filter(function(o) { return o.x > -60; });
 
+        // 移动道具
         for (var i = 0; i < pickups.length; i++) pickups[i].x -= gameSpeed;
         pickups = pickups.filter(function(p) { return p.x > -40; });
 
+        // 碰撞
         var tr = {
             x: tank.x,
             y: tank.y,
@@ -353,11 +393,9 @@
                 tank.hp -= 25;
                 tank.invincibleTimer = tank.invincibleDuration;
                 obstacles[i].x = -999;
-                debug('💥 受伤！HP: ' + tank.hp, true);
                 if (tank.hp <= 0) {
                     tank.hp = 0;
                     gameOver = true;
-                    debug('💀 坦克损毁！');
                 }
             }
         }
@@ -366,7 +404,6 @@
             if (rectCollide(tr, pickups[i])) {
                 if (tank.hp < tank.maxHp) {
                     tank.hp = Math.min(tank.maxHp, tank.hp + 25);
-                    debug('🔧 回血！HP: ' + tank.hp);
                 }
                 pickups[i].x = -999;
             }
@@ -398,14 +435,17 @@
     function drawTank() {
         var img = getTankImage();
         var h = getTankHeight();
-        tank.y = GROUND_Y - h;
+        tank.y = tank.y; // 保持 update 里设置的值
         tank.h = h;
 
+        // 修正绘制坐标
+        var drawY = tank.y;
+
         if (img && img.complete && img.naturalWidth > 0) {
-            ctx.drawImage(img, tank.x, tank.y, TANK_W, h);
+            ctx.drawImage(img, tank.x, drawY, TANK_W, h);
         } else {
             ctx.fillStyle = '#4CAF50';
-            ctx.fillRect(tank.x, tank.y, TANK_W, h);
+            ctx.fillRect(tank.x, drawY, TANK_W, h);
         }
     }
 
@@ -488,14 +528,14 @@
             uiCtx.textAlign = 'center';
             uiCtx.fillText('坦克损毁', WIDTH / 2, HEIGHT / 2 - 10);
             uiCtx.font = '16px "Courier New"';
-            uiCtx.fillText('按空格或点击屏幕重新出发', WIDTH / 2, HEIGHT / 2 + 30);
+            uiCtx.fillText('按空格/点击/点按钮重新出发', WIDTH / 2, HEIGHT / 2 + 30);
         } else if (!gameStarted) {
             uiCtx.fillStyle = '#fff';
             uiCtx.font = 'bold 20px "Courier New"';
             uiCtx.textAlign = 'center';
-            uiCtx.fillText('按空格或点击屏幕开始', WIDTH / 2, HEIGHT / 2);
+            uiCtx.fillText('按空格/点击/点按钮开始', WIDTH / 2, HEIGHT / 2);
             uiCtx.font = '13px "Courier New"';
-            uiCtx.fillText('跳跃: 空格/↑/W/点击 | 下蹲: ↓/S | 主防: Shift', WIDTH / 2, HEIGHT / 2 + 28);
+            uiCtx.fillText('跳跃: 空格/↑/W/点击/右下按钮 | 下蹲: ↓/S | 主防: Shift', WIDTH / 2, HEIGHT / 2 + 28);
         }
     }
 
@@ -536,7 +576,7 @@
 
     function startWhenReady() {
         if (loaded >= totalImages) {
-            debug('🎮 素材加载完毕，启动！');
+            debug('🎮 素材加载完毕，启动游戏循环');
             gameLoop();
         } else {
             debug('⏳ 加载中... (' + loaded + '/' + totalImages + ')');
