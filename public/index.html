@@ -11,19 +11,10 @@
         canvas { display: block; position: absolute; top: 0; left: 0; }
         #uiCanvas { z-index: 10; pointer-events: none; }
         #debugPanel {
-            position: fixed;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.85);
-            color: #0f0;
-            font-size: 11px;
-            padding: 8px;
-            border-radius: 4px;
-            z-index: 999;
-            max-width: 90vw;
-            max-height: 120px;
-            overflow-y: auto;
-            pointer-events: auto;
+            position: fixed; bottom: 10px; left: 10px;
+            background: rgba(0,0,0,0.85); color: #0f0; font-size: 11px;
+            padding: 8px; border-radius: 4px; z-index: 999;
+            max-width: 90vw; max-height: 120px; overflow-y: auto; pointer-events: auto;
         }
     </style>
 </head>
@@ -38,25 +29,25 @@
 // ==================== 调试面板 ====================
 const debugEl = document.getElementById('debugPanel');
 const debugLines = [];
-function debug(msg, isError = false) {
+function debug(msg, isError) {
     debugLines.push((isError ? '❌ ' : '✅ ') + msg);
     if (debugLines.length > 15) debugLines.shift();
     debugEl.innerHTML = debugLines.join('<br>');
     if (isError) console.error(msg); else console.log(msg);
 }
 
-// ==================== 原始错误捕获 ====================
-window.onerror = function(msg, source, line, col, error) {
+window.onerror = function(msg, source, line) {
     debug('JS错误: ' + msg + ' (行' + line + ')', true);
     return false;
 };
 
-// ==================== 获取画布 ====================
+// ==================== 画布 ====================
+let gameCanvas, uiCanvas, ctx, uiCtx;
 try {
-    const gameCanvas = document.getElementById('gameCanvas');
-    const uiCanvas = document.getElementById('uiCanvas');
-    const ctx = gameCanvas.getContext('2d');
-    const uiCtx = uiCanvas.getContext('2d');
+    gameCanvas = document.getElementById('gameCanvas');
+    uiCanvas = document.getElementById('uiCanvas');
+    ctx = gameCanvas.getContext('2d');
+    uiCtx = uiCanvas.getContext('2d');
     debug('画布获取成功');
 } catch(e) {
     debug('画布获取失败: ' + e.message, true);
@@ -87,21 +78,22 @@ const images = {};
 let loaded = 0;
 const totalImages = imageList.length;
 
-imageList.forEach(item => {
+imageList.forEach(function(item) {
     images[item.name] = new Image();
-    images[item.name].onload = () => {
+    images[item.name].onload = function() {
         loaded++;
-        debug(`图片加载: ${item.name}.${item.ext} (${loaded}/${totalImages})`);
+        debug('图片加载: ' + item.name + '.' + item.ext + ' (' + loaded + '/' + totalImages + ')');
     };
-    images[item.name].onerror = () => {
-        debug(`图片加载失败: ${item.name}.${item.ext}`, true);
+    images[item.name].onerror = function() {
+        debug('图片加载失败: ' + item.name + '.' + item.ext, true);
         loaded++;
     };
-    images[item.name].src = `assets/${item.name}.${item.ext}`;
+    // 关键修复：路径以 / 开头
+    images[item.name].src = '/assets/' + item.name + '.' + item.ext;
 });
-debug(`开始加载 ${totalImages} 张图片`);
+debug('开始加载 ' + totalImages + ' 张图片，路径: /assets/');
 
-// ==================== 坦克属性 ====================
+// ==================== 坦克 ====================
 const TANK_W = 64;
 const TANK_H = 44;
 const TANK_CROUCH_H = 24;
@@ -127,7 +119,7 @@ let gameOver = false, gameStarted = false;
 
 // ==================== 键盘 ====================
 const keys = {};
-document.addEventListener('keydown', e => {
+document.addEventListener('keydown', function(e) {
     keys[e.code] = true;
     if (!gameStarted && !gameOver) gameStarted = true;
     if (gameOver && e.code === 'Space') { restartGame(); return; }
@@ -138,7 +130,7 @@ document.addEventListener('keydown', e => {
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') activateSkill();
     e.preventDefault();
 });
-document.addEventListener('keyup', e => {
+document.addEventListener('keyup', function(e) {
     keys[e.code] = false;
     if (e.code === 'ArrowDown' || e.code === 'KeyS') tank.crouching = false;
 });
@@ -153,7 +145,7 @@ function rectCollide(a, b) {
 }
 
 function getTankImage() {
-    const c = tank.crouching;
+    var c = tank.crouching;
     if (tank.skillActive) return images[c ? 'tank_crouch_active' : 'tank_normal_active'];
     if (tank.skillCooldownTimer > 0) return images[c ? 'tank_crouch_cd' : 'tank_normal_cd'];
     return images[c ? 'tank_crouch_ready' : 'tank_normal_ready'];
@@ -169,7 +161,7 @@ function update() {
     pickupInterval = Math.max(120, 240 - Math.floor(score / 400));
 
     tank.vy += GRAVITY; tank.y += tank.vy;
-    const h = getTankHeight();
+    var h = getTankHeight();
     if (tank.y >= GROUND_Y - h) { tank.y = GROUND_Y - h; tank.vy = 0; tank.jumping = false; }
 
     if (tank.skillActive) { tank.skillTimer--; if (tank.skillTimer <= 0) { tank.skillActive = false; tank.skillCooldownTimer = tank.skillCooldown; } }
@@ -179,7 +171,7 @@ function update() {
     obstacleTimer++;
     if (obstacleTimer >= obstacleInterval) {
         obstacleTimer = 0;
-        const isAir = Math.random() < 0.45;
+        var isAir = Math.random() < 0.45;
         obstacles.push({
             x: WIDTH,
             y: isAir ? GROUND_Y - OBS_A_H - 30 : GROUND_Y - OBS_G_H,
@@ -194,27 +186,27 @@ function update() {
         if (Math.random() < 0.6) pickups.push({ x: WIDTH, y: GROUND_Y - PICKUP_H - 5, w: PICKUP_W, h: PICKUP_H });
     }
 
-    for (let o of obstacles) o.x -= gameSpeed;
-    obstacles = obstacles.filter(o => o.x > -60);
-    for (let p of pickups) p.x -= gameSpeed;
-    pickups = pickups.filter(p => p.x > -40);
+    for (var i = 0; i < obstacles.length; i++) obstacles[i].x -= gameSpeed;
+    obstacles = obstacles.filter(function(o) { return o.x > -60; });
+    for (var i = 0; i < pickups.length; i++) pickups[i].x -= gameSpeed;
+    pickups = pickups.filter(function(p) { return p.x > -40; });
 
-    const tr = { x: tank.x, y: tank.y, w: TANK_W, h: getTankHeight() };
-    for (let o of obstacles) {
-        if (rectCollide(tr, o)) {
+    var tr = { x: tank.x, y: tank.y, w: TANK_W, h: getTankHeight() };
+    for (var i = 0; i < obstacles.length; i++) {
+        if (rectCollide(tr, obstacles[i])) {
             if (tank.skillActive || tank.invincibleTimer > 0) continue;
-            tank.hp -= 25; tank.invincibleTimer = tank.invincibleDuration; o.x = -999;
+            tank.hp -= 25; tank.invincibleTimer = tank.invincibleDuration; obstacles[i].x = -999;
             if (tank.hp <= 0) { tank.hp = 0; gameOver = true; }
         }
     }
-    for (let p of pickups) {
-        if (rectCollide(tr, p)) {
+    for (var i = 0; i < pickups.length; i++) {
+        if (rectCollide(tr, pickups[i])) {
             if (tank.hp < tank.maxHp) tank.hp = Math.min(tank.maxHp, tank.hp + 25);
-            p.x = -999;
+            pickups[i].x = -999;
         }
     }
-    obstacles = obstacles.filter(o => o.x !== -999);
-    pickups = pickups.filter(p => p.x !== -999);
+    obstacles = obstacles.filter(function(o) { return o.x !== -999; });
+    pickups = pickups.filter(function(p) { return p.x !== -999; });
 }
 
 // ==================== 绘制 ====================
@@ -232,8 +224,8 @@ function drawBackground() {
 }
 
 function drawTank() {
-    const img = getTankImage();
-    const h = getTankHeight();
+    var img = getTankImage();
+    var h = getTankHeight();
     tank.y = GROUND_Y - h; tank.h = h;
     if (img && img.complete && img.naturalWidth > 0) {
         ctx.drawImage(img, tank.x, tank.y, TANK_W, h);
@@ -243,16 +235,18 @@ function drawTank() {
 }
 
 function drawObstacles() {
-    for (let o of obstacles) {
-        const img = images[o.type === 'air' ? 'obstacle_air' : 'obstacle_ground'];
+    for (var i = 0; i < obstacles.length; i++) {
+        var o = obstacles[i];
+        var img = images[o.type === 'air' ? 'obstacle_air' : 'obstacle_ground'];
         if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, o.x, o.y, o.w, o.h);
         else { ctx.fillStyle = o.type === 'air' ? '#F44' : '#333'; ctx.fillRect(o.x, o.y, o.w, o.h); }
     }
 }
 
 function drawPickups() {
-    const img = images['weld_torch'];
-    for (let p of pickups) {
+    var img = images['weld_torch'];
+    for (var i = 0; i < pickups.length; i++) {
+        var p = pickups[i];
         if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, p.x, p.y, p.w, p.h);
         else { ctx.fillStyle = '#FFD700'; ctx.fillRect(p.x, p.y, p.w, p.h); }
     }
@@ -260,16 +254,16 @@ function drawPickups() {
 
 function drawUI() {
     uiCtx.clearRect(0, 0, WIDTH, HEIGHT);
-    const barX = 20, barY = 20, barW = 200, barH = 18;
+    var barX = 20, barY = 20, barW = 200, barH = 18;
     uiCtx.fillStyle = '#333'; uiCtx.fillRect(barX, barY, barW, barH);
-    const r = tank.hp / tank.maxHp;
+    var r = tank.hp / tank.maxHp;
     uiCtx.fillStyle = r > 0.5 ? '#4CAF50' : r > 0.25 ? '#FF9800' : '#F44336';
     uiCtx.fillRect(barX, barY, barW * r, barH);
     uiCtx.strokeStyle = '#fff'; uiCtx.lineWidth = 2; uiCtx.strokeRect(barX, barY, barW, barH);
     uiCtx.fillStyle = '#fff'; uiCtx.font = 'bold 13px "Courier New"'; uiCtx.textAlign = 'center';
-    uiCtx.fillText(`HP: ${tank.hp}/${tank.maxHp}`, barX + barW/2, barY + 14);
+    uiCtx.fillText('HP: ' + tank.hp + '/' + tank.maxHp, barX + barW/2, barY + 14);
 
-    const sx = 20, sy = 48, sw = 200, sh = 10;
+    var sx = 20, sy = 48, sw = 200, sh = 10;
     uiCtx.fillStyle = '#222'; uiCtx.fillRect(sx, sy, sw, sh);
     if (tank.skillActive) {
         uiCtx.fillStyle = '#FFD700'; uiCtx.fillRect(sx, sy, sw * (tank.skillTimer/tank.skillDuration), sh);
