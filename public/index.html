@@ -60,12 +60,30 @@ const imageNames = [
     'bg', 'ground'
 ];
 
+// ==================== 加载素材 ====================
+// 定义每个图片的实际扩展名
+const imageList = [
+    { name: 'tank_normal_ready',   ext: 'png' },
+    { name: 'tank_normal_active',  ext: 'jpg' },
+    { name: 'tank_normal_cd',      ext: 'jpg' },
+    { name: 'tank_crouch_ready',   ext: 'jpg' },
+    { name: 'tank_crouch_active',  ext: 'jpg' },
+    { name: 'tank_crouch_cd',      ext: 'jpg' },
+    { name: 'obstacle_ground',     ext: 'png' },
+    { name: 'obstacle_air',        ext: 'jpg' },
+    { name: 'weld_torch',          ext: 'png' },
+    { name: 'bg',                  ext: 'jpg' },  // 如果不是jpg，改成你的格式
+    { name: 'ground',              ext: 'png' },
+];
+
 const images = {};
 let loaded = 0;
-imageNames.forEach(name => {
-    images[name] = new Image();
-    images[name].onload = () => loaded++;
-    images[name].src = `assets/${name}.png`;
+const totalImages = imageList.length;
+
+imageList.forEach(item => {
+    images[item.name] = new Image();
+    images[item.name].onload = () => loaded++;
+    images[item.name].src = `assets/${item.name}.${item.ext}`;
 });
 
 // ==================== 坦克属性 ====================
@@ -461,7 +479,7 @@ function restartGame() {
 
 // ==================== 启动 ====================
 function startWhenReady() {
-    if (loaded >= imageNames.length) {
+    if (loaded >= imageList.length) {
         console.log('✅ 全部素材加载完毕，游戏启动！');
         gameLoop();
     } else {
