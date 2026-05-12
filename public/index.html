@@ -9,10 +9,12 @@
         html, body {
             width: 100%; height: 100%; overflow: hidden;
             background: #000;
-            font-family: 'Courier New', monospace;
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
             touch-action: manipulation;
             overscroll-behavior: none;
             -webkit-overflow-scrolling: auto;
+            user-select: none;
+            -webkit-user-select: none;
         }
         #gameContainer {
             position: fixed; top: 0; left: 0;
@@ -25,46 +27,47 @@
         }
         #uiCanvas { z-index: 10; pointer-events: none; }
 
-        #debugPanel {
-            position: fixed; bottom: 8px; left: 8px;
-            background: rgba(0,0,0,0.85); color: #0f0;
-            font-size: 10px; padding: 6px 10px; border-radius: 4px;
-            z-index: 9999; max-width: 60vw; max-height: 100px;
-            overflow-y: auto; pointer-events: auto; line-height: 1.4; opacity: 0.9;
+        /* 控制按钮 - 小且半透明，不抢眼 */
+        .ctrl-btn {
+            position: fixed;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.5);
+            color: #fff;
+            font-weight: bold;
+            z-index: 9998;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.15s;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
         }
         #jumpBtn {
-            position: fixed; bottom: 50px; right: 40px;
-            width: 120px; height: 120px; border-radius: 50%;
-            background: rgba(255,255,255,0.25);
-            border: 3px solid rgba(255,255,255,0.5);
-            color: #fff; font-size: 26px; font-weight: bold;
-            z-index: 9998; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; user-select: none; -webkit-user-select: none;
-            touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+            bottom: 30px; right: 25px;
+            width: 80px; height: 80px;
+            background: rgba(255,255,255,0.15);
+            font-size: 20px;
         }
-        #jumpBtn:active { background: rgba(255,255,255,0.5); }
+        #jumpBtn:active { background: rgba(255,255,255,0.4); }
         #crouchBtn {
-            position: fixed; bottom: 60px; right: 185px;
-            width: 90px; height: 90px; border-radius: 50%;
-            background: rgba(255,255,255,0.2);
-            border: 2px solid rgba(255,255,255,0.4);
-            color: #fff; font-size: 18px; font-weight: bold;
-            z-index: 9998; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; user-select: none; -webkit-user-select: none;
-            touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+            bottom: 38px; right: 120px;
+            width: 60px; height: 60px;
+            background: rgba(255,255,255,0.1);
+            font-size: 15px;
         }
-        #crouchBtn:active { background: rgba(255,255,255,0.4); }
+        #crouchBtn:active { background: rgba(255,255,255,0.3); }
         #skillBtn {
-            position: fixed; bottom: 50px; left: 40px;
-            width: 100px; height: 100px; border-radius: 50%;
-            background: rgba(255,215,0,0.2);
-            border: 2px solid rgba(255,215,0,0.5);
-            color: #FFD700; font-size: 16px; font-weight: bold;
-            z-index: 9998; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; user-select: none; -webkit-user-select: none;
-            touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+            bottom: 30px; left: 25px;
+            width: 70px; height: 70px;
+            background: rgba(255,215,0,0.1);
+            border-color: rgba(255,215,0,0.5);
+            color: #FFD700;
+            font-size: 14px;
         }
-        #skillBtn:active { background: rgba(255,215,0,0.5); }
+        #skillBtn:active { background: rgba(255,215,0,0.3); }
     </style>
 </head>
 <body>
@@ -73,34 +76,20 @@
     <canvas id="gameCanvas"></canvas>
     <canvas id="uiCanvas"></canvas>
 </div>
-<div id="debugPanel">⏳ 启动中...</div>
-<button id="skillBtn">主防</button>
-<button id="crouchBtn">蹲</button>
-<button id="jumpBtn">跳</button>
+<button class="ctrl-btn" id="skillBtn">主防</button>
+<button class="ctrl-btn" id="crouchBtn">蹲</button>
+<button class="ctrl-btn" id="jumpBtn">跳</button>
 
 <script>
 (function() {
     'use strict';
 
-    // ==================== 调试 ====================
-    var debugEl = document.getElementById('debugPanel');
-    var debugLines = [];
-    function debug(msg, isError) {
-        debugLines.push((isError ? '❌ ' : '') + msg);
-        if (debugLines.length > 20) debugLines.shift();
-        debugEl.innerHTML = debugLines.join('<br>');
-    }
-    window.onerror = function(msg, source, line) {
-        debug('JS错误: ' + msg + ' (行' + line + ')', true);
-        return false;
-    };
-
-    // ==================== 画布：1920x1080 ====================
     var gameCanvas = document.getElementById('gameCanvas');
     var uiCanvas = document.getElementById('uiCanvas');
     var ctx = gameCanvas.getContext('2d');
     var uiCtx = uiCanvas.getContext('2d');
 
+    // ==================== 全高清画布 ====================
     var WIDTH = 1920;
     var HEIGHT = 1080;
     gameCanvas.width = WIDTH;
@@ -108,7 +97,7 @@
     uiCanvas.width = WIDTH;
     uiCanvas.height = HEIGHT;
 
-    // ==================== 图片加载 ====================
+    // ==================== 加载素材 ====================
     var imageList = [
         { name: 'tank_normal_ready',  ext: 'png' },
         { name: 'tank_normal_active', ext: 'jpg' },
@@ -131,80 +120,55 @@
         var item = imageList[i];
         var img = new Image();
         images[item.name] = img;
-        img.onload = (function(name, ext) {
-            return function() {
-                loaded++;
-                debug('OK: ' + name + '.' + ext + ' (' + loaded + '/' + totalImages + ')');
-            };
-        })(item.name, item.ext);
-        img.onerror = (function(name, ext) {
-            return function() {
-                loaded++;
-                debug('FAIL: ' + name + '.' + ext, true);
-            };
-        })(item.name, item.ext);
+        img.onload = function() { loaded++; };
+        img.onerror = function() { loaded++; };
         img.src = '/assets/' + item.name + '.' + item.ext;
     }
-    debug('加载 ' + totalImages + ' 张图片');
 
-    // ==================== 放大后的元素尺寸 ====================
-    // 正常坦克 2542x1071 → 放大到 240x101
+    // ==================== 元素尺寸（根据原图比例） ====================
     var TANK_W = 240;
-    var TANK_H = Math.round(TANK_W * (1071 / 2542)); // ≈101
+    var TANK_H = Math.round(TANK_W * (1071 / 2542));       // 101
+    var TANK_CROUCH_H = Math.round(TANK_W * (539 / 2542)); // 51
 
-    // 压扁坦克 2542x539 → 240x51
-    var TANK_CROUCH_H = Math.round(TANK_W * (539 / 2542)); // ≈51
-
-    // 地面障碍 566x435 → 放大到 90x69
     var OBS_G_W = 90;
-    var OBS_G_H = Math.round(OBS_G_W * (435 / 566)); // ≈69
+    var OBS_G_H = Math.round(OBS_G_W * (435 / 566));       // 69
 
-    // 空中障碍 1251x1229 → 放大到 140x137
-    var OBS_A_W = 140;
-    var OBS_A_H = Math.round(OBS_A_W * (1229 / 1251)); // ≈137
+    // 空中障碍缩小：80x78
+    var OBS_A_W = 80;
+    var OBS_A_H = Math.round(OBS_A_W * (1229 / 1251));     // 78
 
-    // 焊枪 537x351 → 放大到 80x52
     var PICKUP_W = 80;
-    var PICKUP_H = Math.round(PICKUP_W * (351 / 537)); // ≈52
+    var PICKUP_H = Math.round(PICKUP_W * (351 / 537));     // 52
 
-    var GROUND_H = 120;
+    var GROUND_H = 130;
     var GROUND_Y = HEIGHT - GROUND_H;
-
-    debug('坦克: ' + TANK_W + 'x' + TANK_H + ' 压扁: ' + TANK_CROUCH_H);
-    debug('地面障碍: ' + OBS_G_W + 'x' + OBS_G_H + ' 空中: ' + OBS_A_W + 'x' + OBS_A_H);
-    debug('焊枪: ' + PICKUP_W + 'x' + PICKUP_H);
 
     // ==================== 坦克 ====================
     var tank = {
         x: 180,
         y: GROUND_Y - TANK_H,
-        w: TANK_W,
-        h: TANK_H,
+        w: TANK_W, h: TANK_H,
         vy: 0,
-        jumping: false,
-        crouching: false,
-        hp: 100,
-        maxHp: 100,
+        jumping: false, crouching: false,
+        hp: 100, maxHp: 100,
         skillActive: false,
-        skillTimer: 0,
-        skillDuration: 10 * 60,
-        skillCooldown: 30 * 60,
-        skillCooldownTimer: 0,
-        invincibleTimer: 0,
-        invincibleDuration: 25
+        skillTimer: 0, skillDuration: 10 * 60,
+        skillCooldown: 30 * 60, skillCooldownTimer: 0,
+        invincibleTimer: 0, invincibleDuration: 25
     };
 
-    var GRAVITY = 0.9;
-    var JUMP_FORCE = -18;
+    // 更长的滞空
+    var GRAVITY = 0.6;
+    var JUMP_FORCE = -19;
 
-    // ==================== 障碍物 & 道具 ====================
+    // ==================== 障碍 & 道具 ====================
     var obstacles = [];
     var obstacleTimer = 0;
-    var obstacleInterval = 160;  // 提高间隔，降低出现频率
+    var obstacleInterval = 170;
 
     var pickups = [];
     var pickupTimer = 0;
-    var pickupInterval = 280;    // 道具间隔也提高
+    var pickupInterval = 300;
 
     var frameCount = 0;
     var score = 0;
@@ -212,13 +176,10 @@
     var gameOver = false;
     var gameStarted = false;
 
-    // ==================== 跳跃（蹲下时也允许跳，自动起身） ====================
+    // ==================== 跳跃 ====================
     function doJump() {
         if (tank.jumping) return;
-        // 蹲下时自动起身跳跃
-        if (tank.crouching) {
-            tank.crouching = false;
-        }
+        if (tank.crouching) tank.crouching = false;
         tank.vy = JUMP_FORCE;
         tank.jumping = true;
     }
@@ -237,24 +198,18 @@
             return;
         }
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            e.preventDefault();
-            doJump();
+            e.preventDefault(); doJump();
         }
         if (e.code === 'ArrowDown' || e.code === 'KeyS') {
             e.preventDefault();
-            if (!tank.jumping) {
-                tank.crouching = true;
-            }
+            if (!tank.jumping) tank.crouching = true;
         }
         if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
-            e.preventDefault();
-            activateSkill();
+            e.preventDefault(); activateSkill();
         }
     });
     document.addEventListener('keyup', function(e) {
-        if (e.code === 'ArrowDown' || e.code === 'KeyS') {
-            tank.crouching = false;
-        }
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') tank.crouching = false;
     });
 
     // ==================== 按钮 ====================
@@ -270,13 +225,8 @@
         if (!gameStarted || gameOver) return;
         if (!tank.jumping) tank.crouching = true;
     });
-    crouchBtn.addEventListener('pointerup', function(e) {
-        e.preventDefault();
-        tank.crouching = false;
-    });
-    crouchBtn.addEventListener('pointerleave', function() {
-        tank.crouching = false;
-    });
+    crouchBtn.addEventListener('pointerup', function(e) { e.preventDefault(); tank.crouching = false; });
+    crouchBtn.addEventListener('pointerleave', function() { tank.crouching = false; });
     document.getElementById('skillBtn').addEventListener('pointerdown', function(e) {
         e.preventDefault(); e.stopPropagation();
         if (!gameStarted || gameOver) return;
@@ -311,11 +261,13 @@
 
         frameCount++; score++;
         gameSpeed = 8 + Math.floor(score / 600);
-        obstacleInterval = Math.max(80, 160 - Math.floor(score / 400));
-        pickupInterval = Math.max(140, 280 - Math.floor(score / 500));
+        obstacleInterval = Math.max(85, 170 - Math.floor(score / 400));
+        pickupInterval = Math.max(150, 300 - Math.floor(score / 500));
 
+        // 重力
         tank.vy += GRAVITY;
         tank.y += tank.vy;
+
         var h = getTankHeight();
         var floorY = GROUND_Y - h;
         if (tank.y >= floorY) {
@@ -324,6 +276,7 @@
             tank.jumping = false;
         }
 
+        // 技能
         if (tank.skillActive) {
             tank.skillTimer--;
             if (tank.skillTimer <= 0) {
@@ -334,28 +287,30 @@
         if (tank.skillCooldownTimer > 0) tank.skillCooldownTimer--;
         if (tank.invincibleTimer > 0) tank.invincibleTimer--;
 
+        // 生成障碍
         obstacleTimer++;
         if (obstacleTimer >= obstacleInterval) {
             obstacleTimer = 0;
             var isAir = Math.random() < 0.4;
             obstacles.push({
                 x: WIDTH,
-                y: isAir ? GROUND_Y - OBS_A_H - 50 : GROUND_Y - OBS_G_H,
+                // 空中障碍飞更高，蹲下一定能躲过
+                y: isAir ? GROUND_Y - OBS_A_H - 80 : GROUND_Y - OBS_G_H,
                 w: isAir ? OBS_A_W : OBS_G_W,
                 h: isAir ? OBS_A_H : OBS_G_H,
                 type: isAir ? 'air' : 'ground'
             });
         }
 
+        // 生成道具
         pickupTimer++;
         if (pickupTimer >= pickupInterval) {
             pickupTimer = 0;
-            if (Math.random() < 0.55) {
+            if (Math.random() < 0.5) {
                 pickups.push({
                     x: WIDTH,
                     y: GROUND_Y - PICKUP_H - 15,
-                    w: PICKUP_W,
-                    h: PICKUP_H
+                    w: PICKUP_W, h: PICKUP_H
                 });
             }
         }
@@ -365,6 +320,7 @@
         for (var i = 0; i < pickups.length; i++) pickups[i].x -= gameSpeed;
         pickups = pickups.filter(function(p) { return p.x > -100; });
 
+        // 碰撞
         var tr = { x: tank.x, y: tank.y, w: TANK_W, h: getTankHeight() };
         for (var i = 0; i < obstacles.length; i++) {
             if (rectCollide(tr, obstacles[i])) {
@@ -385,30 +341,64 @@
         pickups = pickups.filter(function(p) { return p.x !== -999; });
     }
 
-    // ==================== 绘制 ====================
+    // ==================== 精美绘制 ====================
     function drawBackground() {
         var bg = images['bg'];
         if (bg && bg.complete && bg.naturalWidth > 0) {
             ctx.drawImage(bg, 0, 0, WIDTH, HEIGHT);
         } else {
-            ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, WIDTH, GROUND_Y);
+            // 精美渐变背景
+            var grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+            grad.addColorStop(0, '#1a1a2e');
+            grad.addColorStop(0.5, '#16213e');
+            grad.addColorStop(1, '#0f3460');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, WIDTH, GROUND_Y);
         }
+
         var g = images['ground'];
         if (g && g.complete && g.naturalWidth > 0) {
             ctx.drawImage(g, 0, GROUND_Y, WIDTH, GROUND_H);
         } else {
-            ctx.fillStyle = '#8B7355'; ctx.fillRect(0, GROUND_Y, WIDTH, GROUND_H);
+            var grad2 = ctx.createLinearGradient(0, GROUND_Y, 0, HEIGHT);
+            grad2.addColorStop(0, '#3d2b1f');
+            grad2.addColorStop(1, '#1a0f07');
+            ctx.fillStyle = grad2;
+            ctx.fillRect(0, GROUND_Y, WIDTH, GROUND_H);
+            // 地面线
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, GROUND_Y);
+            ctx.lineTo(WIDTH, GROUND_Y);
+            ctx.stroke();
         }
+
+        // 远处薄雾效果
+        var fog = ctx.createLinearGradient(0, GROUND_Y - 200, 0, GROUND_Y);
+        fog.addColorStop(0, 'rgba(255,255,255,0)');
+        fog.addColorStop(1, 'rgba(255,255,255,0.03)');
+        ctx.fillStyle = fog;
+        ctx.fillRect(0, GROUND_Y - 200, WIDTH, 200);
     }
 
     function drawTank() {
         var img = getTankImage();
         var h = getTankHeight();
         tank.h = h;
+
+        // 坦克底部阴影
+        var shadowY = GROUND_Y - 4;
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(tank.x + TANK_W/2, shadowY, TANK_W/2.5, 6, 0, 0, Math.PI*2);
+        ctx.fill();
+
         if (img && img.complete && img.naturalWidth > 0) {
             ctx.drawImage(img, tank.x, tank.y, TANK_W, h);
         } else {
-            ctx.fillStyle = '#4CAF50'; ctx.fillRect(tank.x, tank.y, TANK_W, h);
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(tank.x, tank.y, TANK_W, h);
         }
     }
 
@@ -429,62 +419,146 @@
         var img = images['weld_torch'];
         for (var i = 0; i < pickups.length; i++) {
             var p = pickups[i];
+            // 发光效果
+            ctx.shadowColor = '#FFD700';
+            ctx.shadowBlur = 15;
             if (img && img.complete && img.naturalWidth > 0) {
                 ctx.drawImage(img, p.x, p.y, PICKUP_W, PICKUP_H);
             } else {
-                ctx.fillStyle = '#FFD700'; ctx.fillRect(p.x, p.y, PICKUP_W, PICKUP_H);
+                ctx.fillStyle = '#FFD700';
+                ctx.fillRect(p.x, p.y, PICKUP_W, PICKUP_H);
             }
+            ctx.shadowBlur = 0;
         }
     }
 
     function drawUI() {
         uiCtx.clearRect(0, 0, WIDTH, HEIGHT);
 
-        // HP条
-        var bx = 40, by = 40, bw = 400, bh = 40;
-        uiCtx.fillStyle = '#333'; uiCtx.fillRect(bx, by, bw, bh);
+        // ---- HP 条（左上角） ----
+        var bx = 40, by = 35, bw = 380, bh = 36, radius = 12;
+        // 背景
+        uiCtx.fillStyle = 'rgba(0,0,0,0.5)';
+        uiCtx.strokeStyle = 'rgba(255,255,255,0.3)';
+        uiCtx.lineWidth = 2;
+        roundedRect(uiCtx, bx, by, bw, bh, radius);
+        uiCtx.fill();
+        uiCtx.stroke();
+
+        // 血量
         var r = tank.hp / tank.maxHp;
-        uiCtx.fillStyle = r > 0.5 ? '#4CAF50' : (r > 0.25 ? '#FF9800' : '#F44336');
-        uiCtx.fillRect(bx, by, bw * r, bh);
-        uiCtx.strokeStyle = '#fff'; uiCtx.lineWidth = 3; uiCtx.strokeRect(bx, by, bw, bh);
-        uiCtx.fillStyle = '#fff'; uiCtx.font = 'bold 26px "Courier New"'; uiCtx.textAlign = 'center';
-        uiCtx.fillText('HP: ' + tank.hp + '/' + tank.maxHp, bx + bw/2, by + 29);
+        var hpW = (bw - 6) * r;
+        var hpColor;
+        if (r > 0.5) hpColor = '#4CAF50';
+        else if (r > 0.25) hpColor = '#FF9800';
+        else hpColor = '#F44336';
 
-        // 技能条
-        var sx = 40, sy = 94, sw = 400, sh = 22;
-        uiCtx.fillStyle = '#222'; uiCtx.fillRect(sx, sy, sw, sh);
+        uiCtx.fillStyle = hpColor;
+        roundedRect(uiCtx, bx+3, by+3, hpW, bh-6, radius-4);
+        uiCtx.fill();
+
+        // 文字
+        uiCtx.fillStyle = '#fff';
+        uiCtx.font = 'bold 22px "Segoe UI", "PingFang SC", sans-serif';
+        uiCtx.textAlign = 'center';
+        uiCtx.shadowColor = 'rgba(0,0,0,0.5)';
+        uiCtx.shadowBlur = 4;
+        uiCtx.fillText('HP  ' + tank.hp + ' / ' + tank.maxHp, bx + bw/2, by + 26);
+        uiCtx.shadowBlur = 0;
+
+        // ---- 技能条（HP条下方） ----
+        var sx = 40, sy = 82, sw = 380, sh = 18;
+        uiCtx.fillStyle = 'rgba(0,0,0,0.5)';
+        uiCtx.strokeStyle = 'rgba(255,255,255,0.25)';
+        uiCtx.lineWidth = 1.5;
+        roundedRect(uiCtx, sx, sy, sw, sh, 8);
+        uiCtx.fill();
+        uiCtx.stroke();
+
+        var skillText = '';
+        var skillColor = '';
+        var skillRatio = 0;
+
         if (tank.skillActive) {
-            uiCtx.fillStyle = '#FFD700';
-            uiCtx.fillRect(sx, sy, sw * (tank.skillTimer/tank.skillDuration), sh);
-            uiCtx.fillStyle = '#fff'; uiCtx.font = '18px "Courier New"';
-            uiCtx.fillText('主防开启', sx+sw/2, sy-6);
+            skillColor = '#FFD700';
+            skillRatio = tank.skillTimer / tank.skillDuration;
+            skillText = '🛡 主防开启';
         } else if (tank.skillCooldownTimer > 0) {
-            uiCtx.fillStyle = '#666';
-            uiCtx.fillRect(sx, sy, sw * (tank.skillCooldownTimer/tank.skillCooldown), sh);
-            uiCtx.fillStyle = '#aaa'; uiCtx.font = '18px "Courier New"';
-            uiCtx.fillText('主防CD: ' + Math.ceil(tank.skillCooldownTimer/60) + 's', sx+sw/2, sy-6);
+            skillColor = '#888';
+            skillRatio = tank.skillCooldownTimer / tank.skillCooldown;
+            skillText = '⏳ 冷却 ' + Math.ceil(tank.skillCooldownTimer / 60) + 's';
         } else {
-            uiCtx.fillStyle = '#4CAF50'; uiCtx.fillRect(sx, sy, sw, sh);
-            uiCtx.fillStyle = '#fff'; uiCtx.font = '18px "Courier New"';
-            uiCtx.fillText('主防就绪 [Shift]', sx+sw/2, sy-6);
+            skillColor = '#4CAF50';
+            skillRatio = 1;
+            skillText = '✓ 主防就绪 [Shift]';
         }
 
-        // 分数
-        uiCtx.fillStyle = '#fff'; uiCtx.font = 'bold 48px "Courier New"'; uiCtx.textAlign = 'right';
-        uiCtx.fillText('' + Math.floor(score/10), WIDTH-40, 75);
+        uiCtx.fillStyle = skillColor;
+        roundedRect(uiCtx, sx+2, sy+2, (sw-4)*skillRatio, sh-4, 6);
+        uiCtx.fill();
 
+        uiCtx.fillStyle = '#fff';
+        uiCtx.font = 'bold 13px "Segoe UI", "PingFang SC", sans-serif';
+        uiCtx.textAlign = 'center';
+        uiCtx.fillText(skillText, sx + sw/2, sy + 13);
+
+        // ---- 分数（右上角） ----
+        uiCtx.fillStyle = '#fff';
+        uiCtx.font = 'bold 56px "Segoe UI", "PingFang SC", sans-serif';
+        uiCtx.textAlign = 'right';
+        uiCtx.shadowColor = 'rgba(255,255,255,0.4)';
+        uiCtx.shadowBlur = 20;
+        uiCtx.fillText('' + Math.floor(score/10), WIDTH - 50, 80);
+        uiCtx.shadowBlur = 0;
+
+        // ---- 游戏提示 ----
         if (gameOver) {
-            uiCtx.fillStyle = 'rgba(0,0,0,0.7)'; uiCtx.fillRect(0, HEIGHT/2-100, WIDTH, 200);
-            uiCtx.fillStyle = '#fff'; uiCtx.font = 'bold 60px "Courier New"'; uiCtx.textAlign = 'center';
-            uiCtx.fillText('坦克损毁', WIDTH/2, HEIGHT/2-20);
-            uiCtx.font = '30px "Courier New"';
-            uiCtx.fillText('按空格/点击屏幕重新出发', WIDTH/2, HEIGHT/2+50);
+            uiCtx.fillStyle = 'rgba(0,0,0,0.75)';
+            uiCtx.fillRect(0, HEIGHT/2 - 120, WIDTH, 240);
+
+            uiCtx.fillStyle = '#fff';
+            uiCtx.font = 'bold 64px "Segoe UI", "PingFang SC", sans-serif';
+            uiCtx.textAlign = 'center';
+            uiCtx.shadowColor = 'rgba(255,0,0,0.6)';
+            uiCtx.shadowBlur = 30;
+            uiCtx.fillText('坦克损毁', WIDTH/2, HEIGHT/2 - 15);
+            uiCtx.shadowBlur = 0;
+
+            uiCtx.fillStyle = '#ddd';
+            uiCtx.font = '28px "Segoe UI", "PingFang SC", sans-serif';
+            uiCtx.fillText('按空格 / 点击屏幕重新出发', WIDTH/2, HEIGHT/2 + 60);
         } else if (!gameStarted) {
-            uiCtx.fillStyle = '#fff'; uiCtx.font = 'bold 44px "Courier New"'; uiCtx.textAlign = 'center';
-            uiCtx.fillText('按空格/点击屏幕开始', WIDTH/2, HEIGHT/2);
-            uiCtx.font = '26px "Courier New"';
-            uiCtx.fillText('跳跃: 空格/↑/W/按钮 | 下蹲: ↓/S/按钮 | 主防: Shift/按钮', WIDTH/2, HEIGHT/2+55);
+            uiCtx.fillStyle = 'rgba(0,0,0,0.6)';
+            uiCtx.fillRect(0, HEIGHT/2 - 120, WIDTH, 240);
+
+            uiCtx.fillStyle = '#fff';
+            uiCtx.font = 'bold 50px "Segoe UI", "PingFang SC", sans-serif';
+            uiCtx.textAlign = 'center';
+            uiCtx.fillText('轻 坦 快 跑', WIDTH/2, HEIGHT/2 - 25);
+
+            uiCtx.fillStyle = '#ccc';
+            uiCtx.font = '24px "Segoe UI", "PingFang SC", sans-serif';
+            uiCtx.fillText('按空格 / 点击屏幕开始', WIDTH/2, HEIGHT/2 + 35);
+
+            uiCtx.fillStyle = '#aaa';
+            uiCtx.font = '18px "Segoe UI", "PingFang SC", sans-serif';
+            uiCtx.fillText('跳跃: 空格/↑/W  |  下蹲: ↓/S  |  主防: Shift', WIDTH/2, HEIGHT/2 + 70);
         }
+    }
+
+    // 圆角矩形辅助函数
+    function roundedRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
     }
 
     // ==================== 主循环 ====================
@@ -523,7 +597,6 @@
 
     function startWhenReady() {
         if (loaded >= totalImages) {
-            debug('🎮 启动！元素已放大，障碍频率降低');
             gameLoop();
         } else {
             setTimeout(startWhenReady, 200);
