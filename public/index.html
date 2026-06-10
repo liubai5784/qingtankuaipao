@@ -82,7 +82,7 @@
         }
         #skillBtn:active { background: rgba(255,215,0,0.3); }
         #pauseBtn {
-            top: 24px; right: 24px;
+            top: 132px; right: 24px;
             width: 52px; height: 52px;
             font-size: 12px;
             border-color: rgba(180,220,255,0.45);
@@ -110,7 +110,6 @@
 (function() {
     'use strict';
 
-    // ==================== 横竖屏检测 ====================
     var rotateHint = document.getElementById('rotateHint');
     var gameContainer = document.getElementById('gameContainer');
     var buttons = document.querySelectorAll('.ctrl-btn');
@@ -133,7 +132,6 @@
     window.addEventListener('contextmenu', function(e) { e.preventDefault(); });
     checkOrientation();
 
-    // ==================== 画布 ====================
     var gameCanvas = document.getElementById('gameCanvas');
     var uiCanvas = document.getElementById('uiCanvas');
     var ctx = gameCanvas.getContext('2d');
@@ -146,7 +144,6 @@
     uiCanvas.width = WIDTH;
     uiCanvas.height = HEIGHT;
 
-    // ==================== 加载素材 ====================
     var imageList = [
         { name: 'tank_normal_ready',  ext: 'png' },
         { name: 'tank_normal_active', ext: 'jpg' },
@@ -171,11 +168,9 @@
         images[item.name] = img;
         img.onload = function() { loaded++; };
         img.onerror = function() { loaded++; };
-        // 使用相对路径，方便以后整体复制到其他仓库的子目录中。
         img.src = './assets/' + item.name + '.' + item.ext;
     }
 
-    // ==================== 常量 ====================
     var TANK_W = 240;
     var TANK_H = Math.round(TANK_W * (1071 / 2542));
     var TANK_CROUCH_H = Math.round(TANK_W * (539 / 2542));
@@ -203,7 +198,6 @@
         catch (error) {}
     }
 
-    // ==================== 游戏状态 ====================
     var tank = {};
     var obstacles = [];
     var pickups = [];
@@ -271,7 +265,6 @@
 
     resetGame();
 
-    // ==================== 操作 ====================
     function startGame() {
         if (!gameStarted && !gameOver) gameStarted = true;
     }
@@ -290,7 +283,6 @@
         if (!tank.jumping) {
             tank.targetY = GROUND_Y - TANK_CROUCH_H;
         } else {
-            // 空中下蹲变成快速下落，躲完空中障碍后更容易落回节奏。
             tank.vy = Math.max(tank.vy, 8);
         }
     }
@@ -410,7 +402,6 @@
         requestJump();
     });
 
-    // ==================== 生成与碰撞 ====================
     function rectCollide(a, b) {
         return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
     }
@@ -518,7 +509,6 @@
         updateButtonText();
     }
 
-    // ==================== 更新 ====================
     function update() {
         if (!gameStarted || gameOver || paused) return;
 
@@ -529,7 +519,6 @@
         pickupInterval = Math.max(160, 320 - score / 120);
         groundOffset = (groundOffset + gameSpeed) % WIDTH;
 
-        // 重力、跳跃缓冲、落地宽容。
         jumpBuffer = Math.max(0, jumpBuffer - 1);
         tank.vy += 0.72;
         tank.y += tank.vy;
@@ -554,7 +543,6 @@
             tank.y += (tank.targetY - tank.y) * 0.38;
         }
 
-        // 主防保持原设：一次触发，持续 10 秒，结束后进入 30 秒冷却。
         if (tank.skillActive) {
             tank.skillTimer--;
             if (tank.skillTimer <= 0) {
@@ -565,7 +553,6 @@
         if (tank.skillCooldownTimer > 0) tank.skillCooldownTimer--;
         if (tank.invincibleTimer > 0) tank.invincibleTimer--;
 
-        // 生成障碍。前 1 秒给玩家缓冲，最小间距随速度变化，减少必死组合。
         obstacleTimer++;
         var minGap = 430 + gameSpeed * 22;
         var lastObs = obstacles.length > 0 ? obstacles[obstacles.length - 1] : null;
@@ -624,7 +611,6 @@
         updateButtonText();
     }
 
-    // ==================== 绘制 ====================
     function drawBackground() {
         var bg = images.bg;
         if (bg && bg.complete && bg.naturalWidth > 0) {
@@ -820,7 +806,7 @@
             uiCtx.fillText('暂停中', WIDTH / 2, HEIGHT / 2 - 15);
             uiCtx.font = '26px "Segoe UI", "PingFang SC", sans-serif';
             uiCtx.fillStyle = '#ddd';
-            uiCtx.fillText('按 P / ESC 或点击右上角继续', WIDTH / 2, HEIGHT / 2 + 55);
+            uiCtx.fillText('按 P / ESC 或点击右侧按钮继续', WIDTH / 2, HEIGHT / 2 + 55);
             return;
         }
 
@@ -857,7 +843,6 @@
         }
     }
 
-    // ==================== 主循环 ====================
     function gameLoop() {
         update();
         ctx.clearRect(0, 0, WIDTH, HEIGHT);
