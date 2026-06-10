@@ -219,6 +219,8 @@
     var coyoteTimer = 0;
     var spacePressed = false;
     var groundOffset = 0;
+    var gunnerReliable = true;
+    var gunnerStats = { shots: 0, hits: 0 };
 
     function resetTank() {
         tank = {
@@ -260,6 +262,8 @@
         jumpBuffer = 0;
         coyoteTimer = 0;
         groundOffset = 0;
+        gunnerReliable = Math.random() < 0.5;
+        gunnerStats = { shots: 0, hits: 0 };
         updateButtonText();
     }
 
@@ -430,6 +434,10 @@
         combo = 0;
     }
 
+    function getObstacleName(o) {
+        return o.type === 'air' ? '巡飞弹' : '地面人';
+    }
+
     function spawnObstacle() {
         var isAir = Math.random() < (score > 260 ? 0.45 : 0.28);
         var airGap = 86 + Math.random() * 36;
@@ -440,7 +448,8 @@
             h: isAir ? OBS_A_H : OBS_G_H,
             type: isAir ? 'air' : 'ground',
             scored: false,
-            blocked: false
+            blocked: false,
+            gunnerChecked: false
         });
     }
 
@@ -449,6 +458,24 @@
         var spawnChance = hpRatio < 0.45 ? 0.74 : 0.36;
         if (Math.random() > spawnChance) return;
         pickups.push({ x: WIDTH + 30, y: GROUND_Y - PICKUP_H - 18, w: PICKUP_W, h: PICKUP_H });
+    }
+
+    function tryGunner(o) {
+        if (o.gunnerChecked || o.scored || o.blocked || o.x === -999) return;
+        if (o.x > WIDTH - 280 || o.x < tank.x + TANK_W + 120) return;
+
+        o.gunnerChecked = true;
+        gunnerStats.shots++;
+
+        var hitChance = gunnerReliable ? 0.5 : 0.05;
+        if (Math.random() < hitChance) {
+            gunnerStats.hits++;
+            score += 35;
+            addFloatingText('二号位清理' + getObstacleName(o) + ' +35', o.x, o.y - 24, '#A7E8FF');
+            o.x = -999;
+        } else if (Math.random() < 0.42) {
+            addFloatingText(gunnerReliable ? '二号位压制失败' : '二号位又脱靶', o.x, o.y - 24, '#B0B0B0');
+        }
     }
 
     function rewardObstaclePass(o) {
@@ -571,10 +598,13 @@
         for (var i = 0; i < obstacles.length; i++) obstacles[i].x -= gameSpeed;
         for (var j = 0; j < pickups.length; j++) pickups[j].x -= gameSpeed;
 
+        for (var g = 0; g < obstacles.length; g++) tryGunner(obstacles[g]);
+
         var tankRect = { x: tank.x + 18, y: tank.y + 8, w: TANK_W - 34, h: getTankHeight() - 12 };
 
         for (var k = 0; k < obstacles.length; k++) {
             var o = obstacles[k];
+            if (o.x === -999) continue;
             if (!o.scored && o.x + o.w < tank.x) rewardObstaclePass(o);
             if (rectCollide(tankRect, o)) {
                 if (tank.skillActive) blockObstacle(o);
@@ -788,12 +818,19 @@
         uiCtx.fillStyle = 'rgba(255,255,255,0.72)';
         uiCtx.fillText('BEST ' + bestScore, WIDTH - 50, 114);
 
+        var gunnerY = 150;
         if (combo >= 2) {
             uiCtx.textAlign = 'left';
             uiCtx.fillStyle = '#FFD700';
             uiCtx.font = 'bold 28px "Segoe UI", "PingFang SC", sans-serif';
             uiCtx.fillText('连击 x' + combo, 42, 150);
+            gunnerY = 188;
         }
+
+        uiCtx.textAlign = 'left';
+        uiCtx.fillStyle = gunnerReliable ? '#A7E8FF' : '#FFB3B3';
+        uiCtx.font = 'bold 22px "Segoe UI", "PingFang SC", sans-serif';
+        uiCtx.fillText('二号位：' + (gunnerReliable ? '靠谱' : '不靠谱') + '  清理率 ' + (gunnerReliable ? '50%' : '5%') + '  命中 ' + gunnerStats.hits + '/' + gunnerStats.shots, 42, gunnerY);
 
         drawFloatingTexts();
 
@@ -823,23 +860,24 @@
             uiCtx.fillStyle = '#ddd';
             uiCtx.font = '30px "Segoe UI", "PingFang SC", sans-serif';
             uiCtx.fillText('得分 ' + Math.floor(score) + '  /  最高 ' + bestScore + '  /  最大连击 x' + maxCombo, WIDTH / 2, HEIGHT / 2 + 16);
-            uiCtx.font = '25px "Segoe UI", "PingFang SC", sans-serif';
-            uiCtx.fillText('按空格 / 点击屏幕重新出发', WIDTH / 2, HEIGHT / 2 + 78);
+            uiCtx.font = '23px "Segoe UI", "PingFang SC", sans-serif';
+            uiCtx.fillText('二号位命中 ' + gunnerStats.hits + '/' + gunnerStats.shots + '  ·  按空格 / 点击屏幕重新出发', WIDTH / 2, HEIGHT / 2 + 78);
         } else if (!gameStarted) {
             uiCtx.fillStyle = 'rgba(0,0,0,0.64)';
-            uiCtx.fillRect(0, HEIGHT / 2 - 155, WIDTH, 310);
+            uiCtx.fillRect(0, HEIGHT / 2 - 165, WIDTH, 330);
             uiCtx.fillStyle = '#fff';
             uiCtx.font = 'bold 54px "Segoe UI", "PingFang SC", sans-serif';
             uiCtx.textAlign = 'center';
-            uiCtx.fillText('轻 坦 快 跑', WIDTH / 2, HEIGHT / 2 - 70);
+            uiCtx.fillText('轻 坦 快 跑', WIDTH / 2, HEIGHT / 2 - 86);
             uiCtx.fillStyle = '#ddd';
             uiCtx.font = '25px "Segoe UI", "PingFang SC", sans-serif';
-            uiCtx.fillText('按空格 / 点击屏幕开始', WIDTH / 2, HEIGHT / 2 - 12);
+            uiCtx.fillText('按空格 / 点击屏幕开始', WIDTH / 2, HEIGHT / 2 - 28);
             uiCtx.fillStyle = '#aaa';
             uiCtx.font = '19px "Segoe UI", "PingFang SC", sans-serif';
-            uiCtx.fillText('跳跃: 空格/↑/W  |  下蹲: ↓/S  |  主防: Shift  |  暂停: P/ESC', WIDTH / 2, HEIGHT / 2 + 35);
+            uiCtx.fillText('跳跃: 空格/↑/W  |  下蹲: ↓/S  |  主防: Shift  |  暂停: P/ESC', WIDTH / 2, HEIGHT / 2 + 19);
             uiCtx.fillStyle = '#FFD700';
-            uiCtx.fillText('新增：极限闪避、连击、主防格挡、最高分记录', WIDTH / 2, HEIGHT / 2 + 76);
+            uiCtx.fillText('二号位开局随机：靠谱 50% / 不靠谱 5%，会尝试清理巡飞弹和地面人', WIDTH / 2, HEIGHT / 2 + 60);
+            uiCtx.fillText('新增：极限闪避、连击、主防格挡、最高分记录', WIDTH / 2, HEIGHT / 2 + 96);
         }
     }
 
