@@ -224,7 +224,6 @@
     var jumpBuffer = 0;
     var coyoteTimer = 0;
     var spacePressed = false;
-    var holdingShield = false;
     var groundOffset = 0;
 
     function resetTank() {
@@ -239,10 +238,11 @@
             targetY: GROUND_Y - TANK_H,
             hp: 100,
             maxHp: 100,
-            shieldActive: false,
-            shieldEnergy: 100,
-            maxShieldEnergy: 100,
-            shieldRecoverDelay: 0,
+            skillActive: false,
+            skillTimer: 0,
+            skillDuration: 10 * 60,
+            skillCooldown: 30 * 60,
+            skillCooldownTimer: 0,
             invincibleTimer: 0,
             invincibleDuration: 32
         };
@@ -265,7 +265,6 @@
         paused = false;
         jumpBuffer = 0;
         coyoteTimer = 0;
-        holdingShield = false;
         groundOffset = 0;
         updateButtonText();
     }
@@ -301,15 +300,14 @@
         if (!tank.jumping) tank.targetY = GROUND_Y - TANK_H;
     }
 
-    function beginShield() {
+    function activateSkill() {
         if (!gameStarted) { startGame(); return; }
         if (gameOver || paused) return;
-        holdingShield = true;
-    }
-
-    function endShield() {
-        holdingShield = false;
-        tank.shieldActive = false;
+        if (tank.skillActive || tank.skillCooldownTimer > 0) return;
+        tank.skillActive = true;
+        tank.skillTimer = tank.skillDuration;
+        addFloatingText('主防开启', tank.x + TANK_W / 2, tank.y - 25, '#FFD700');
+        updateButtonText();
     }
 
     function togglePause() {
@@ -331,13 +329,20 @@
         var pauseBtn = document.getElementById('pauseBtn');
         var skillBtn = document.getElementById('skillBtn');
         pauseBtn.textContent = paused ? '继续' : '暂停';
-        var energy = Math.floor(tank.shieldEnergy || 0);
-        skillBtn.textContent = tank.shieldActive ? '防御' : '主防';
-        skillBtn.classList.toggle('is-low', energy < 18);
+        if (tank.skillActive) {
+            skillBtn.textContent = '防御';
+            skillBtn.classList.remove('is-low');
+        } else if (tank.skillCooldownTimer > 0) {
+            skillBtn.textContent = Math.ceil(tank.skillCooldownTimer / 60) + 's';
+            skillBtn.classList.add('is-low');
+        } else {
+            skillBtn.textContent = '主防';
+            skillBtn.classList.remove('is-low');
+        }
     }
 
     document.addEventListener('keydown', function(e) {
-        if (e.repeat && e.code !== 'ShiftLeft' && e.code !== 'ShiftRight') return;
+        if (e.repeat) return;
 
         if (e.code === 'KeyP' || e.code === 'Escape') {
             e.preventDefault();
@@ -370,14 +375,13 @@
         }
         if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
             e.preventDefault();
-            beginShield();
+            activateSkill();
         }
     });
 
     document.addEventListener('keyup', function(e) {
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') spacePressed = false;
         if (e.code === 'ArrowDown' || e.code === 'KeyS') doStand();
-        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') endShield();
     });
 
     document.getElementById('jumpBtn').addEventListener('pointerdown', function(e) {
@@ -390,11 +394,9 @@
     crouchBtn.addEventListener('pointercancel', doStand);
     crouchBtn.addEventListener('pointerleave', doStand);
 
-    var skillBtn = document.getElementById('skillBtn');
-    skillBtn.addEventListener('pointerdown', function(e) { e.preventDefault(); e.stopPropagation(); beginShield(); });
-    skillBtn.addEventListener('pointerup', function(e) { e.preventDefault(); endShield(); });
-    skillBtn.addEventListener('pointercancel', endShield);
-    skillBtn.addEventListener('pointerleave', endShield);
+    document.getElementById('skillBtn').addEventListener('pointerdown', function(e) {
+        e.preventDefault(); e.stopPropagation(); activateSkill();
+    });
 
     document.getElementById('pauseBtn').addEventListener('pointerdown', function(e) {
         e.preventDefault(); e.stopPropagation(); togglePause();
@@ -415,8 +417,8 @@
 
     function getTankImage() {
         var c = tank.crouching;
-        if (tank.shieldActive) return images[c ? 'tank_crouch_active' : 'tank_normal_active'];
-        if (tank.shieldEnergy < 18) return images[c ? 'tank_crouch_cd' : 'tank_normal_cd'];
+        if (tank.skillActive) return images[c ? 'tank_crouch_active' : 'tank_normal_active'];
+        if (tank.skillCooldownTimer > 0) return images[c ? 'tank_crouch_cd' : 'tank_normal_cd'];
         return images[c ? 'tank_crouch_ready' : 'tank_normal_ready'];
     }
 
@@ -446,14 +448,14 @@
             w: isAir ? OBS_A_W : OBS_G_W,
             h: isAir ? OBS_A_H : OBS_G_H,
             type: isAir ? 'air' : 'ground',
-            scored: false
+            scored: false,
+            blocked: false
         });
     }
 
     function spawnPickup() {
         var hpRatio = tank.hp / tank.maxHp;
-        var energyRatio = tank.shieldEnergy / tank.maxShieldEnergy;
-        var spawnChance = hpRatio < 0.45 ? 0.74 : (energyRatio < 0.35 ? 0.58 : 0.36);
+        var spawnChance = hpRatio < 0.45 ? 0.74 : 0.36;
         if (Math.random() > spawnChance) return;
         pickups.push({ x: WIDTH + 30, y: GROUND_Y - PICKUP_H - 18, w: PICKUP_W, h: PICKUP_H });
     }
@@ -482,20 +484,19 @@
         addCombo(1);
     }
 
-    function crushObstacle(o) {
-        var reward = 90 + Math.min(combo * 3, 80);
+    function blockObstacle(o) {
+        if (o.blocked) return;
+        o.blocked = true;
+        var reward = 50 + Math.min(combo * 2, 50);
         score += reward;
         addCombo(1);
-        tank.shieldEnergy = clamp(tank.shieldEnergy - 16, 0, tank.maxShieldEnergy);
-        tank.shieldRecoverDelay = 38;
-        addFloatingText('主防破障 +' + reward, o.x, o.y - 30, '#FFD700');
+        addFloatingText('主防格挡 +' + reward, o.x, o.y - 30, '#FFD700');
         o.x = -999;
     }
 
     function takeDamage(o) {
         tank.hp -= 25;
         tank.invincibleTimer = tank.invincibleDuration;
-        tank.shieldRecoverDelay = 45;
         resetCombo();
         addFloatingText('-25 HP', tank.x + 80, tank.y - 24, '#FF5C5C');
         o.x = -999;
@@ -507,14 +508,14 @@
 
     function finishGame() {
         gameOver = true;
-        holdingShield = false;
-        tank.shieldActive = false;
+        tank.skillActive = false;
         var finalScore = Math.floor(score);
         if (finalScore > bestScore) {
             bestScore = finalScore;
             writeBestScore(bestScore);
             addFloatingText('新纪录！', WIDTH / 2, HEIGHT / 2 - 170, '#FFD700');
         }
+        updateButtonText();
     }
 
     // ==================== 更新 ====================
@@ -553,17 +554,15 @@
             tank.y += (tank.targetY - tank.y) * 0.38;
         }
 
-        // 主防改为能量制：按住才开，能量会恢复。
-        if (holdingShield && tank.shieldEnergy > 0) {
-            tank.shieldActive = true;
-            tank.shieldEnergy = clamp(tank.shieldEnergy - 0.58, 0, tank.maxShieldEnergy);
-            tank.shieldRecoverDelay = 18;
-            if (tank.shieldEnergy <= 0) tank.shieldActive = false;
-        } else {
-            tank.shieldActive = false;
-            if (tank.shieldRecoverDelay > 0) tank.shieldRecoverDelay--;
-            else tank.shieldEnergy = clamp(tank.shieldEnergy + 0.22, 0, tank.maxShieldEnergy);
+        // 主防保持原设：一次触发，持续 10 秒，结束后进入 30 秒冷却。
+        if (tank.skillActive) {
+            tank.skillTimer--;
+            if (tank.skillTimer <= 0) {
+                tank.skillActive = false;
+                tank.skillCooldownTimer = tank.skillCooldown;
+            }
         }
+        if (tank.skillCooldownTimer > 0) tank.skillCooldownTimer--;
         if (tank.invincibleTimer > 0) tank.invincibleTimer--;
 
         // 生成障碍。前 1 秒给玩家缓冲，最小间距随速度变化，减少必死组合。
@@ -591,7 +590,7 @@
             var o = obstacles[k];
             if (!o.scored && o.x + o.w < tank.x) rewardObstaclePass(o);
             if (rectCollide(tankRect, o)) {
-                if (tank.shieldActive) crushObstacle(o);
+                if (tank.skillActive) blockObstacle(o);
                 else if (tank.invincibleTimer <= 0) takeDamage(o);
             }
         }
@@ -600,11 +599,10 @@
             var item = pickups[p];
             if (rectCollide(tankRect, item)) {
                 var oldHp = tank.hp;
-                tank.hp = Math.min(tank.maxHp, tank.hp + 20);
-                tank.shieldEnergy = clamp(tank.shieldEnergy + 22, 0, tank.maxShieldEnergy);
+                tank.hp = Math.min(tank.maxHp, tank.hp + 25);
                 score += 40;
                 addCombo(1);
-                addFloatingText(oldHp < tank.hp ? '维修 +20' : '能量 +22', item.x, item.y - 18, '#7CFF8A');
+                addFloatingText(oldHp < tank.hp ? '维修 +25' : '状态良好 +40', item.x, item.y - 18, '#7CFF8A');
                 item.x = -999;
             }
         }
@@ -671,7 +669,7 @@
         ctx.ellipse(tank.x + TANK_W / 2, GROUND_Y - 4, TANK_W / 2.5, 5, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        if (tank.shieldActive) {
+        if (tank.skillActive) {
             ctx.strokeStyle = 'rgba(255,215,0,0.86)';
             ctx.lineWidth = 7;
             ctx.shadowColor = '#FFD700';
@@ -775,10 +773,23 @@
         var hpColor = hpRatio > 0.5 ? '#4CAF50' : (hpRatio > 0.25 ? '#FF9800' : '#F44336');
         drawBar(40, 35, 380, 36, hpRatio, hpColor, 'HP  ' + tank.hp + ' / ' + tank.maxHp);
 
-        var shieldRatio = tank.shieldEnergy / tank.maxShieldEnergy;
-        var shieldColor = tank.shieldActive ? '#FFD700' : (shieldRatio < 0.18 ? '#777' : '#55C7FF');
-        var shieldText = tank.shieldActive ? '主防展开' : (shieldRatio < 0.18 ? '主防充能中' : '主防能量 [Shift]');
-        drawBar(40, 84, 380, 24, shieldRatio, shieldColor, shieldText);
+        var skillRatio;
+        var skillColor;
+        var skillText;
+        if (tank.skillActive) {
+            skillRatio = tank.skillTimer / tank.skillDuration;
+            skillColor = '#FFD700';
+            skillText = '主防开启';
+        } else if (tank.skillCooldownTimer > 0) {
+            skillRatio = tank.skillCooldownTimer / tank.skillCooldown;
+            skillColor = '#777';
+            skillText = '主防冷却 ' + Math.ceil(tank.skillCooldownTimer / 60) + 's';
+        } else {
+            skillRatio = 1;
+            skillColor = '#4CAF50';
+            skillText = '主防就绪 [Shift]';
+        }
+        drawBar(40, 84, 380, 24, skillRatio, skillColor, skillText);
 
         uiCtx.fillStyle = '#fff';
         uiCtx.textAlign = 'right';
@@ -840,9 +851,9 @@
             uiCtx.fillText('按空格 / 点击屏幕开始', WIDTH / 2, HEIGHT / 2 - 12);
             uiCtx.fillStyle = '#aaa';
             uiCtx.font = '19px "Segoe UI", "PingFang SC", sans-serif';
-            uiCtx.fillText('跳跃: 空格/↑/W  |  下蹲: ↓/S  |  按住主防: Shift  |  暂停: P/ESC', WIDTH / 2, HEIGHT / 2 + 35);
+            uiCtx.fillText('跳跃: 空格/↑/W  |  下蹲: ↓/S  |  主防: Shift  |  暂停: P/ESC', WIDTH / 2, HEIGHT / 2 + 35);
             uiCtx.fillStyle = '#FFD700';
-            uiCtx.fillText('新增：极限闪避、连击、主防破障、最高分记录', WIDTH / 2, HEIGHT / 2 + 76);
+            uiCtx.fillText('新增：极限闪避、连击、主防格挡、最高分记录', WIDTH / 2, HEIGHT / 2 + 76);
         }
     }
 
